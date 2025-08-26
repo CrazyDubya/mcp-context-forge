@@ -35,6 +35,49 @@
 
     <!-- ![Virtual Server GIF](./images/virtual-servers.gif) -->
 
+    ```mermaid
+    graph TD
+        subgraph "Virtual Server: 'My App'"
+            direction LR
+            vs_tool1["Tool: Get Weather"]
+            vs_tool2["Tool: Send Email"]
+            vs_resource1["Resource: API Key"]
+            vs_prompt1["Prompt: Email Template"]
+        end
+
+        subgraph "Global Catalog"
+            direction TB
+            subgraph "Gateways"
+                gw1["Gateway 1 (Weather API)"]
+                gw2["Gateway 2 (Email Service)"]
+            end
+
+            subgraph "Tools"
+                tool1["Tool: Get Weather"]
+                tool2["Tool: Send Email"]
+                tool3["Tool: Get News"]
+            end
+
+            subgraph "Resources"
+                resource1["Resource: API Key"]
+                resource2["Resource: User Profile"]
+            end
+
+            subgraph "Prompts"
+                prompt1["Prompt: Email Template"]
+                prompt2["Prompt: News Summary"]
+            end
+        end
+
+        gw1 -- provides --> tool1
+        gw2 -- provides --> tool2
+
+        vs_tool1 -- "is an instance of" --> tool1
+        vs_tool2 -- "is an instance of" --> tool2
+        vs_resource1 -- "is an instance of" --> resource1
+        vs_prompt1 -- "is an instance of" --> prompt1
+    ```
+
 ---
 
 ## 🛠 Global Tools
