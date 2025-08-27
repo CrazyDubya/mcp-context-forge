@@ -113,3 +113,78 @@ plugin_dirs:
 Now, restart the MCP Gateway. When you invoke any tool, you should see your "Hello World" message in the gateway's logs.
 
 Congratulations! You have successfully created and installed a new native plugin for the MCP Gateway.
+
+## Advanced Topics
+
+### Using the PluginContext
+
+The `PluginContext` object is passed to each hook method and allows you to share state between hooks for a single request. For example, you could store a value in the `tool_pre_invoke` hook and then access it in the `tool_post_invoke` hook.
+
+```python
+# In plugins/hello_world_plugin/plugin.py
+
+class HelloWorldPlugin(Plugin):
+    # ...
+
+    async def tool_pre_invoke(self, payload: ToolPreInvokePayload, context: PluginContext) -> ToolPreInvokeResult:
+        context.set_state("my_custom_value", "Hello from pre_invoke!")
+        return ToolPreInvokeResult(continue_processing=True)
+
+    async def tool_post_invoke(self, payload: ToolPostInvokePayload, context: PluginContext) -> ToolPostInvokeResult:
+        my_value = context.get_state("my_custom_value")
+        self.logger.info(f"Retrieved from state: {my_value}")
+        return ToolPostInvokeResult(continue_processing=True)
+```
+
+### Handling Errors and Violations
+
+Your plugin can block a request by returning a `PluginResult` with `continue_processing=False`. You can also include a `PluginViolation` object to provide more information about why the request was blocked.
+
+```python
+# In plugins/hello_world_plugin/plugin.py
+
+from mcpgateway.plugins.framework import PluginViolation
+
+class HelloWorldPlugin(Plugin):
+    # ...
+
+    async def tool_pre_invoke(self, payload: ToolPreInvokePayload, context: PluginContext) -> ToolPreInvokeResult:
+        if payload.name == "a_blocked_tool":
+            violation = PluginViolation(
+                reason="This tool is blocked by the HelloWorldPlugin.",
+                description="This is a test violation.",
+                code="TOOL_BLOCKED",
+                details={"tool_name": payload.name}
+            )
+            return ToolPreInvokeResult(continue_processing=False, violation=violation)
+        return ToolPreInvokeResult(continue_processing=True)
+```
+
+### Writing Tests for Your Plugin
+
+It's highly recommended to write unit tests for your plugins. You can create a new test file in the `tests/unit/mcpgateway/plugins/plugins` directory.
+
+Here's an example of a simple test for our "Hello World" plugin:
+
+```python
+# In tests/unit/mcpgateway/plugins/plugins/test_hello_world_plugin.py
+
+import pytest
+from unittest.mock import MagicMock
+from mcpgateway.plugins.hello_world_plugin.plugin import HelloWorldPlugin
+from mcpgateway.plugins.framework import ToolPreInvokePayload, PluginContext
+
+@pytest.mark.asyncio
+async def test_hello_world_plugin():
+    # Arrange
+    config = MagicMock()
+    plugin = HelloWorldPlugin(config)
+    payload = ToolPreInvokePayload(name="test_tool", args={})
+    context = PluginContext(request_id="test_request")
+
+    # Act
+    result = await plugin.tool_pre_invoke(payload, context)
+
+    # Assert
+    assert result.continue_processing is True
+```

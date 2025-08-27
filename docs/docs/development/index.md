@@ -14,6 +14,8 @@ Welcome! This guide is for developers contributing to MCP Gateway. Whether you'r
 | [DEVELOPING.md](https://github.com/IBM/mcp-context-forge/blob/main/DEVELOPING.md) | Coding standards, commit conventions, and review workflow                      |
 | [Core Services](services/index.md)                                                | Detailed documentation for the core services of the gateway.                   |
 | [Creating a Plugin](creating-a-plugin.md)                                         | A tutorial on how to create a new plugin using the Plugin Development Kit (PDK). |
+| [Plugin Hot-Reloading](hot-reloading.md)                                          | An explanation of the plugin hot-reloading feature.                            |
+| [CLI Reference](cli-reference.md)                                                 | A detailed reference for the `mcpgateway` command-line interface.              |
 
 ---
 

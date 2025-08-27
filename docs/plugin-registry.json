@@ -22,5 +22,13 @@
         "description": "A plugin to perform search and replace operations on prompts and tool results using regular expressions.",
         "repository_url": "https://github.com/IBM/mcp-context-forge/tree/main/plugins/regex_filter",
         "tags": ["filter", "regex"]
+    },
+    {
+        "name": "Resource Filter Plugin",
+        "author": "MCP Gateway Team",
+        "version": "1.0.0",
+        "description": "A plugin to validate and filter resource requests based on protocol and domain.",
+        "repository_url": "https://github.com/IBM/mcp-context-forge/tree/main/plugins/resource_filter",
+        "tags": ["security", "filter", "resource"]
     }
 ]

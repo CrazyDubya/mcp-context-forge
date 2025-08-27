@@ -4,6 +4,16 @@ This page lists the available plugins for the MCP Gateway. These plugins can be 
 
 <div id="plugin-registry"></div>
 
+## Contributing a Plugin
+
+If you have developed a plugin that you would like to share with the community, we encourage you to add it to this registry. To do so, please follow these steps:
+
+1.  **Fork the Repository**: Fork the [mcp-context-forge](https://github.com/IBM/mcp-context-forge) repository on GitHub.
+2.  **Add Your Plugin**: Add an entry for your plugin to the `docs/plugin-registry.json` file. Please ensure that your entry follows the existing schema.
+3.  **Submit a Pull Request**: Create a pull request with your changes. In the pull request description, please provide a brief overview of your plugin and a link to its repository.
+
+Our team will review your submission and, if it meets the quality standards, we will merge it into the main repository.
+
 <script>
     fetch('../plugin-registry.json')
         .then(response => response.json())
