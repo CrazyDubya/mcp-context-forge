@@ -1,0 +1,26 @@
+[
+    {
+        "name": "PII Filter Plugin",
+        "author": "MCP Gateway Team",
+        "version": "1.0.0",
+        "description": "A plugin to detect and mask Personally Identifiable Information (PII) in prompts and tool results.",
+        "repository_url": "https://github.com/IBM/mcp-context-forge/tree/main/plugins/pii_filter",
+        "tags": ["security", "pii", "filter"]
+    },
+    {
+        "name": "Deny Filter Plugin",
+        "author": "MCP Gateway Team",
+        "version": "1.0.0",
+        "description": "A plugin to deny requests based on configurable rules.",
+        "repository_url": "https://github.com/IBM/mcp-context-forge/tree/main/plugins/deny_filter",
+        "tags": ["security", "filter"]
+    },
+    {
+        "name": "Regex Filter Plugin",
+        "author": "MCP Gateway Team",
+        "version": "1.0.0",
+        "description": "A plugin to perform search and replace operations on prompts and tool results using regular expressions.",
+        "repository_url": "https://github.com/IBM/mcp-context-forge/tree/main/plugins/regex_filter",
+        "tags": ["filter", "regex"]
+    }
+]

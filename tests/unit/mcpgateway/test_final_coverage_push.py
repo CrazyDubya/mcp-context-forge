@@ -117,32 +117,28 @@ async def test_cli_export_import_main_flows():
 @pytest.mark.asyncio
 async def test_export_command_parameter_building():
     """Test export command parameter building logic."""
-    from mcpgateway.cli_export_import import export_command
-    import argparse
-
-    # Test with all parameters set
-    args = argparse.Namespace(
-        types="tools,gateways",
-        exclude_types="servers",
-        tags="production,api",
-        include_inactive=True,
-        include_dependencies=False,
-        output="test-output.json",
-        verbose=True
-    )
+    from mcpgateway.services.cli_service import export_configuration
 
     # Mock the API call to just capture parameters
-    with patch('mcpgateway.cli_export_import.make_authenticated_request') as mock_request:
+    with patch('mcpgateway.services.cli_service.make_authenticated_request') as mock_request:
         mock_request.return_value = {
             "version": "2025-03-26",
             "entities": {"tools": []},
             "metadata": {"entity_counts": {"tools": 0}}
         }
 
-        with patch('mcpgateway.cli_export_import.Path.mkdir'):
+        with patch('mcpgateway.services.cli_service.Path.mkdir'):
             with patch('builtins.open', create=True):
                 with patch('json.dump'):
-                    await export_command(args)
+                    await export_configuration(
+                        types="tools,gateways",
+                        exclude_types="servers",
+                        tags="production,api",
+                        include_inactive=True,
+                        include_dependencies=False,
+                        output_file="test-output.json",
+                        verbose=True
+                    )
 
         # Verify API was called with correct parameters
         mock_request.assert_called_once()
@@ -159,8 +155,7 @@ async def test_export_command_parameter_building():
 @pytest.mark.asyncio
 async def test_import_command_parameter_parsing():
     """Test import command parameter parsing logic."""
-    from mcpgateway.cli_export_import import import_command
-    import argparse
+    from mcpgateway.services.cli_service import import_configuration
 
     # Create temp file with valid JSON
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -172,17 +167,8 @@ async def test_import_command_parameter_parsing():
         json.dump(test_data, f)
         temp_file = f.name
 
-    args = argparse.Namespace(
-        input_file=temp_file,
-        conflict_strategy='update',
-        dry_run=True,
-        rekey_secret='new-secret',
-        include='tools:tool1,tool2;servers:server1',
-        verbose=True
-    )
-
     # Mock the API call
-    with patch('mcpgateway.cli_export_import.make_authenticated_request') as mock_request:
+    with patch('mcpgateway.services.cli_service.make_authenticated_request') as mock_request:
         mock_request.return_value = {
             "import_id": "test_123",
             "status": "completed",
@@ -191,7 +177,14 @@ async def test_import_command_parameter_parsing():
             "errors": []
         }
 
-        await import_command(args)
+        await import_configuration(
+            input_file=temp_file,
+            conflict_strategy='update',
+            dry_run=True,
+            rekey_secret='new-secret',
+            include='tools:tool1,tool2;servers:server1',
+            verbose=True
+        )
 
         # Verify API was called with correct data
         mock_request.assert_called_once()

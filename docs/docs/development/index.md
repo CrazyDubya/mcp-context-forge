@@ -13,6 +13,7 @@ Welcome! This guide is for developers contributing to MCP Gateway. Whether you'r
 | [Doctest Coverage](doctest-coverage.md)                                           | Comprehensive doctest coverage implementation and guidelines                    |
 | [DEVELOPING.md](https://github.com/IBM/mcp-context-forge/blob/main/DEVELOPING.md) | Coding standards, commit conventions, and review workflow                      |
 | [Core Services](services/index.md)                                                | Detailed documentation for the core services of the gateway.                   |
+| [Creating a Plugin](creating-a-plugin.md)                                         | A tutorial on how to create a new plugin using the Plugin Development Kit (PDK). |
 
 ---
 

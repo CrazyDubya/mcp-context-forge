@@ -124,40 +124,270 @@ def _insert_defaults(raw_args: List[str]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:  # noqa: D401 - imperative mood is fine here
-    """Entry point for the *mcpgateway* console script (delegates to Uvicorn).
+# Third-Party
+import typer
+import uvicorn
+from cookiecutter.main import cookiecutter
 
-    Processes command line arguments, handles version requests, and forwards
-    all other arguments to Uvicorn with sensible defaults injected.
+# Third-Party
+import typer
+import uvicorn
+from cookiecutter.main import cookiecutter
+import questionary
 
-    Also supports export/import subcommands for configuration management.
+# ... (imports)
 
-    Environment Variables:
-        MCG_HOST: Default host (default: "127.0.0.1")
-        MCG_PORT: Default port (default: "4444")
-    """
+app = typer.Typer()
+plugin_app = typer.Typer()
+app.add_typer(plugin_app, name="plugin")
+config_app = typer.Typer()
+app.add_typer(config_app, name="config")
+logs_app = typer.Typer()
+app.add_typer(logs_app, name="logs")
 
-    # Check for export/import commands first
-    if len(sys.argv) > 1 and sys.argv[1] in ["export", "import"]:
-        # Avoid cyclic import by importing only when needed
-        # First-Party
-        from mcpgateway.cli_export_import import main_with_subcommands  # pylint: disable=import-outside-toplevel,cyclic-import
+@app.command()
+def run(
+    host: str = typer.Option(DEFAULT_HOST, "--host", "-h", help="Bind socket to this host."),
+    port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="Bind socket to this port."),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload."),
+    workers: int = typer.Option(1, "--workers", "-w", help="Number of worker processes."),
+):
+    """Run the MCP Gateway server."""
+    uvicorn.run(
+        DEFAULT_APP,
+        host=host,
+        port=port,
+        reload=reload,
+        workers=workers,
+    )
 
-        main_with_subcommands()
-        return
+@app.command()
+def export(
+    output_file: str = typer.Option(None, "--output", "-o", help="Output file path"),
+    types: str = typer.Option(None, "--types", help="Comma-separated entity types to include"),
+    exclude_types: str = typer.Option(None, help="Comma-separated entity types to exclude"),
+    tags: str = typer.Option(None, help="Comma-separated tags to filter by"),
+    include_inactive: bool = typer.Option(False, "--include-inactive", help="Include inactive entities"),
+    no_dependencies: bool = typer.Option(False, "--no-dependencies", help="Don't include dependent entities"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose output"),
+):
+    """Export gateway configuration."""
+    from mcpgateway.services.cli_service import export_configuration, CLIError
+    import asyncio
+    try:
+        include_dependencies = not no_dependencies
+        asyncio.run(export_configuration(output_file, types, exclude_types, tags, include_inactive, include_dependencies, verbose))
+    except CLIError as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
 
-    # Check for version flag
-    if "--version" in sys.argv or "-V" in sys.argv:
+@plugin_app.command()
+def create(
+    name: str = typer.Argument(..., help="The name of the new plugin."),
+):
+    """Create a new plugin from a template."""
+    try:
+        cookiecutter(
+            "plugin_templates/native_pdk",
+            no_input=True,
+            extra_context={"plugin_name": name},
+            output_dir="plugins",
+        )
+        print(f"Plugin '{name}' created successfully in 'plugins/{name.lower().replace(' ', '_').replace('-', '_')}'")
+    except Exception as e:
+        print(f"Error creating plugin: {e}")
+        raise typer.Exit(code=1)
+
+
+@plugin_app.command()
+def enable(
+    name: str = typer.Argument(..., help="The name of the plugin to enable."),
+):
+    """Enable a plugin."""
+    try:
+        import yaml
+        from pathlib import Path
+
+        config_path = Path("plugins/config.yaml")
+        if not config_path.exists():
+            print("Error: plugins/config.yaml not found.")
+            raise typer.Exit(code=1)
+
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        found = False
+        for plugin in config.get("plugins", []):
+            if plugin.get("name") == name:
+                plugin["mode"] = "enforce"
+                found = True
+                break
+
+        if not found:
+            print(f"Error: Plugin '{name}' not found in plugins/config.yaml.")
+            raise typer.Exit(code=1)
+
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        print(f"Plugin '{name}' enabled.")
+    except Exception as e:
+        print(f"Error enabling plugin: {e}")
+        raise typer.Exit(code=1)
+
+@plugin_app.command()
+def disable(
+    name: str = typer.Argument(..., help="The name of the plugin to disable."),
+):
+    """Disable a plugin."""
+    try:
+        import yaml
+        from pathlib import Path
+
+        config_path = Path("plugins/config.yaml")
+        if not config_path.exists():
+            print("Error: plugins/config.yaml not found.")
+            raise typer.Exit(code=1)
+
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+
+        found = False
+        for plugin in config.get("plugins", []):
+            if plugin.get("name") == name:
+                plugin["mode"] = "disabled"
+                found = True
+                break
+
+        if not found:
+            print(f"Error: Plugin '{name}' not found in plugins/config.yaml.")
+            raise typer.Exit(code=1)
+
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
+
+        print(f"Plugin '{name}' disabled.")
+    except Exception as e:
+        print(f"Error disabling plugin: {e}")
+        raise typer.Exit(code=1)
+
+
+@config_app.command()
+def wizard():
+    """Run an interactive wizard to create a .env file."""
+    from pathlib import Path
+
+    env_file = Path(".env")
+    if env_file.exists():
+        overwrite = questionary.confirm("A .env file already exists. Do you want to overwrite it?").ask()
+        if not overwrite:
+            print("Aborted.")
+            raise typer.Exit()
+
+    print("Welcome to the MCP Gateway configuration wizard!")
+    print("I'll ask you a few questions to generate a .env file for you.")
+
+    config = {}
+    config["DATABASE_URL"] = questionary.text("Database URL:", default="sqlite:///./mcp.db").ask()
+    config["JWT_SECRET_KEY"] = questionary.text("JWT Secret Key:", default="a-very-secret-key").ask()
+    config["BASIC_AUTH_USER"] = questionary.text("Admin Username:", default="admin").ask()
+    config["BASIC_AUTH_PASSWORD"] = questionary.password("Admin Password:").ask()
+    config["MCPGATEWAY_UI_ENABLED"] = str(questionary.confirm("Enable Admin UI?", default=True).ask()).lower()
+    config["MCPGATEWAY_ADMIN_API_ENABLED"] = str(questionary.confirm("Enable Admin API?", default=True).ask()).lower()
+    config["PLUGINS_ENABLED"] = str(questionary.confirm("Enable Plugins?", default=True).ask()).lower()
+    config["PLUGIN_HOT_RELOAD"] = str(questionary.confirm("Enable Plugin Hot-Reloading?", default=False).ask()).lower()
+
+    with open(env_file, "w") as f:
+        for key, value in config.items():
+            f.write(f"{key}={value}\n")
+
+    print("\n✅ .env file created successfully!")
+    print("You can now start the gateway with `mcpgateway run`.")
+
+
+@logs_app.command()
+def tail(
+    level: str = typer.Option(None, "--level", "-l", help="Minimum log level to show."),
+    entity_type: str = typer.Option(None, "--entity-type", help="Filter by entity type."),
+    entity_id: str = typer.Option(None, "--entity-id", help="Filter by entity ID."),
+):
+    """Tail logs from the gateway in real-time."""
+    import asyncio
+    from mcpgateway.services.cli_service import get_auth_token, CLIError
+    import aiohttp
+    import json
+
+    async def tail_logs():
+        token = await get_auth_token()
+        if not token:
+            print("Error: Authentication token not found.")
+            return
+
+        headers = {"Authorization": token}
+        params = {}
+        if level:
+            params["level"] = level
+        if entity_type:
+            params["entity_type"] = entity_type
+        if entity_id:
+            params["entity_id"] = entity_id
+
+        url = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/admin/logs/stream"
+
+        try:
+            async with aiohttp.ClientSession(headers=headers) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        print(f"Error connecting to log stream: {response.status}")
+                        return
+
+                    async for line in response.content:
+                        if line.startswith(b"data:"):
+                            try:
+                                data = json.loads(line[5:])
+                                print(json.dumps(data, indent=2))
+                            except json.JSONDecodeError:
+                                pass
+        except aiohttp.ClientConnectorError as e:
+            print(f"Connection error: {e}")
+        except KeyboardInterrupt:
+            print("\nStopped tailing logs.")
+
+    try:
+        asyncio.run(tail_logs())
+    except CLIError as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="import")
+def import_command(
+    input_file: str = typer.Argument(..., help="Input file containing export data"),
+    conflict_strategy: str = typer.Option("update", help="How to handle naming conflicts (skip, update, rename, fail)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Validate but don't make changes"),
+    rekey_secret: str = typer.Option(None, help="New encryption secret for cross-environment imports"),
+    include: str = typer.Option(None, help="Selective import: entity_type:name1,name2;entity_type2:name3"),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose output"),
+):
+    """Import gateway configuration."""
+    from mcpgateway.services.cli_service import import_configuration
+    import asyncio
+    try:
+        asyncio.run(import_configuration(input_file, conflict_strategy, dry_run, rekey_secret, include, verbose))
+    except CLIError as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+def version_callback(value: bool):
+    if value:
         print(f"mcpgateway {__version__}")
-        return
+        raise typer.Exit()
 
-    # Discard the program name and inspect the rest.
-    user_args = sys.argv[1:]
-    uvicorn_argv = _insert_defaults(user_args)
-
-    # Uvicorn's `main()` uses sys.argv - patch it in and run.
-    sys.argv = ["mcpgateway", *uvicorn_argv]
-    uvicorn.main()  # pylint: disable=no-value-for-parameter
+@app.callback()
+def main(
+    version: bool = typer.Option(None, "--version", "-V", callback=version_callback, is_eager=True),
+):
+    """MCP Gateway CLI"""
 
 
 if __name__ == "__main__":  # pragma: no cover - executed only when run directly

@@ -455,6 +455,7 @@ class PluginSettings(BaseModel):
         fail_on_plugin_error (bool): error when there is a plugin connectivity or ignore.
         enable_plugin_api (bool): enable or disable plugins globally.
         plugin_health_check_interval (int): health check interval check.
+        hot_reload (bool): enable hot-reloading of plugins when config file changes.
     """
 
     parallel_execution_within_band: bool = False
@@ -462,6 +463,7 @@ class PluginSettings(BaseModel):
     fail_on_plugin_error: bool = False
     enable_plugin_api: bool = False
     plugin_health_check_interval: int = 60
+    hot_reload: bool = False
 
 
 class Config(BaseModel):

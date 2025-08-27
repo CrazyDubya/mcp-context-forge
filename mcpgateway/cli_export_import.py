@@ -105,154 +105,38 @@ async def make_authenticated_request(method: str, url: str, json_data: Optional[
             raise CLIError(f"Failed to connect to gateway at {gateway_url}: {str(e)}")
 
 
-async def export_command(args: argparse.Namespace) -> None:
-    """Execute the export command.
+# First-Party
+from mcpgateway.services.cli_service import export_configuration, import_configuration, CLIError
+# ... (rest of the imports)
 
-    Args:
-        args: Parsed command line arguments
-    """
+async def export_command_wrapper(args: argparse.Namespace) -> None:
+    """Wrapper for the export command to be called from argparse."""
     try:
-        print(f"Exporting configuration from gateway at http://{settings.host}:{settings.port}")
-
-        # Build API parameters
-        params = {}
-        if args.types:
-            params["types"] = args.types
-        if args.exclude_types:
-            params["exclude_types"] = args.exclude_types
-        if args.tags:
-            params["tags"] = args.tags
-        if args.include_inactive:
-            params["include_inactive"] = "true"
-        if not args.include_dependencies:
-            params["include_dependencies"] = "false"
-
-        # Make export request
-        export_data = await make_authenticated_request("GET", "/export", params=params)
-
-        # Determine output file
-        if args.output:
-            output_file = Path(args.output)
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            output_file = Path(f"mcpgateway-export-{timestamp}.json")
-
-        # Write export data
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
-
-        # Print summary
-        metadata = export_data.get("metadata", {})
-        entity_counts = metadata.get("entity_counts", {})
-        total_entities = sum(entity_counts.values())
-
-        print("✅ Export completed successfully!")
-        print(f"📁 Output file: {output_file}")
-        print(f"📊 Exported {total_entities} total entities:")
-        for entity_type, count in entity_counts.items():
-            if count > 0:
-                print(f"   • {entity_type}: {count}")
-
-        if args.verbose:
-            print("\n🔍 Export details:")
-            print(f"   • Version: {export_data.get('version')}")
-            print(f"   • Exported at: {export_data.get('exported_at')}")
-            print(f"   • Exported by: {export_data.get('exported_by')}")
-            print(f"   • Source: {export_data.get('source_gateway')}")
-
-    except Exception as e:
+        await export_configuration(
+            output_file=args.output,
+            types=args.types,
+            exclude_types=args.exclude_types,
+            tags=args.tags,
+            include_inactive=args.include_inactive,
+            include_dependencies=args.include_dependencies,
+            verbose=args.verbose,
+        )
+    except CLIError as e:
         print(f"❌ Export failed: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-
-async def import_command(args: argparse.Namespace) -> None:
-    """Execute the import command.
-
-    Args:
-        args: Parsed command line arguments
-    """
+async def import_command_wrapper(args: argparse.Namespace) -> None:
+    """Wrapper for the import command to be called from argparse."""
     try:
-        input_file = Path(args.input_file)
-        if not input_file.exists():
-            print(f"❌ Input file not found: {input_file}", file=sys.stderr)
-            sys.exit(1)
-
-        print(f"Importing configuration from {input_file}")
-
-        # Load import data
-        with open(input_file, "r", encoding="utf-8") as f:
-            import_data = json.load(f)
-
-        # Build request data
-        request_data = {
-            "import_data": import_data,
-            "conflict_strategy": args.conflict_strategy,
-            "dry_run": args.dry_run,
-        }
-
-        if args.rekey_secret:
-            request_data["rekey_secret"] = args.rekey_secret
-
-        if args.include:
-            # Parse include parameter: "tool:tool1,tool2;server:server1"
-            selected_entities = {}
-            for selection in args.include.split(";"):
-                if ":" in selection:
-                    entity_type, entity_list = selection.split(":", 1)
-                    entities = [e.strip() for e in entity_list.split(",") if e.strip()]
-                    selected_entities[entity_type] = entities
-            request_data["selected_entities"] = selected_entities
-
-        # Make import request
-        result = await make_authenticated_request("POST", "/import", json_data=request_data)
-
-        # Print results
-        status = result.get("status", "unknown")
-        progress = result.get("progress", {})
-
-        if args.dry_run:
-            print("🔍 Dry-run validation completed!")
-        else:
-            print(f"✅ Import {status}!")
-
-        print("📊 Results:")
-        print(f"   • Total entities: {progress.get('total', 0)}")
-        print(f"   • Processed: {progress.get('processed', 0)}")
-        print(f"   • Created: {progress.get('created', 0)}")
-        print(f"   • Updated: {progress.get('updated', 0)}")
-        print(f"   • Skipped: {progress.get('skipped', 0)}")
-        print(f"   • Failed: {progress.get('failed', 0)}")
-
-        # Show warnings if any
-        warnings = result.get("warnings", [])
-        if warnings:
-            print(f"\n⚠️  Warnings ({len(warnings)}):")
-            for warning in warnings[:5]:  # Show first 5 warnings
-                print(f"   • {warning}")
-            if len(warnings) > 5:
-                print(f"   • ... and {len(warnings) - 5} more warnings")
-
-        # Show errors if any
-        errors = result.get("errors", [])
-        if errors:
-            print(f"\n❌ Errors ({len(errors)}):")
-            for error in errors[:5]:  # Show first 5 errors
-                print(f"   • {error}")
-            if len(errors) > 5:
-                print(f"   • ... and {len(errors) - 5} more errors")
-
-        if args.verbose:
-            print("\n🔍 Import details:")
-            print(f"   • Import ID: {result.get('import_id')}")
-            print(f"   • Started at: {result.get('started_at')}")
-            print(f"   • Completed at: {result.get('completed_at')}")
-
-        # Exit with error code if there were failures
-        if progress.get("failed", 0) > 0:
-            sys.exit(1)
-
-    except Exception as e:
+        await import_configuration(
+            input_file=args.input_file,
+            conflict_strategy=args.conflict_strategy,
+            dry_run=args.dry_run,
+            rekey_secret=args.rekey_secret,
+            include=args.include,
+            verbose=args.verbose,
+        )
+    except CLIError as e:
         print(f"❌ Import failed: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
@@ -278,7 +162,7 @@ def create_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--include-inactive", action="store_true", help="Include inactive entities in export")
     export_parser.add_argument("--no-dependencies", action="store_true", help="Don't include dependent entities")
     export_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    export_parser.set_defaults(func=export_command, include_dependencies=True)
+    export_parser.set_defaults(func=export_command_wrapper, include_dependencies=True)
 
     # Import command
     import_parser = subparsers.add_parser("import", help="Import gateway configuration")
@@ -288,7 +172,7 @@ def create_parser() -> argparse.ArgumentParser:
     import_parser.add_argument("--rekey-secret", help="New encryption secret for cross-environment imports")
     import_parser.add_argument("--include", help="Selective import: entity_type:name1,name2;entity_type2:name3")
     import_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    import_parser.set_defaults(func=import_command)
+    import_parser.set_defaults(func=import_command_wrapper)
 
     return parser
 

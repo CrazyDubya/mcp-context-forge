@@ -1,0 +1,8 @@
+{
+    "plugin_name": "My Awesome Plugin",
+    "plugin_slug": "{{ cookiecutter.plugin_name.lower().replace(' ', '_').replace('-', '_') }}",
+    "plugin_class_name": "{{ cookiecutter.plugin_name.title().replace(' ', '').replace('-', '') }}",
+    "description": "A brief description of what this plugin does.",
+    "author": "Your Name",
+    "version": "0.1.0"
+}

@@ -1,8 +1,8 @@
-"""{{ description }}.
+"""{{ cookiecutter.description }}.
 
 Copyright 2025
 SPDX-License-Identifier: Apache-2.0
-Authors: {{ author }}
+Authors: {{ cookiecutter.author }}
 
 This module loads configurations for plugins.
 """
@@ -21,25 +21,21 @@ from mcpgateway.plugins.framework import (
     ToolPreInvokePayload,
     ToolPreInvokeResult,
 )
+from mcpgateway.plugins.framework.helpers import get_plugin_logger, get_config_value
 
 
-{% set class_parts = plugin_name.replace(' ', '_').replace('-','_').split('_') -%}
-{% if class_parts|length > 1 -%}
-{% set class_name = class_parts|map('capitalize')|join -%}
-{% else -%}
-{% set class_name = class_parts|join -%}
-{% endif -%}
-class {{ class_name }}(Plugin):
-    """{{ description }}."""
+class {{ cookiecutter.plugin_class_name }}(Plugin):
+    """{{ cookiecutter.description }}."""
 
     def __init__(self, config: PluginConfig):
         """Entry init block for plugin.
 
         Args:
-          logger: logger that the skill can make use of
-          config: the skill configuration
+          config: The plugin configuration.
         """
         super().__init__(config)
+        self.logger = get_plugin_logger("{{ cookiecutter.plugin_slug }}")
+        self.logger.info("{{ cookiecutter.plugin_name }} initialized.")
 
     async def prompt_pre_fetch(self, payload: PromptPrehookPayload, context: PluginContext) -> PromptPrehookResult:
         """The plugin hook run before a prompt is retrieved and rendered.
@@ -51,6 +47,7 @@ class {{ class_name }}(Plugin):
         Returns:
             The result of the plugin's analysis, including whether the prompt can proceed.
         """
+        self.logger.debug(f"prompt_pre_fetch called for prompt: {payload.name}")
         return PromptPrehookResult(continue_processing=True)
 
     async def prompt_post_fetch(self, payload: PromptPosthookPayload, context: PluginContext) -> PromptPosthookResult:
@@ -75,6 +72,12 @@ class {{ class_name }}(Plugin):
         Returns:
             The result of the plugin's analysis, including whether the tool can proceed.
         """
+        self.logger.info(f"tool_pre_invoke called for tool: {payload.name}")
+
+        # Example of getting a value from the plugin's configuration
+        greeting = get_config_value(context, "greeting", "Hello")
+        self.logger.info(f"{greeting} from the {{ cookiecutter.plugin_name }}!")
+
         return ToolPreInvokeResult(continue_processing=True)
 
     async def tool_post_invoke(self, payload: ToolPostInvokePayload, context: PluginContext) -> ToolPostInvokeResult:
