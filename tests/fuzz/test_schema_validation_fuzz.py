@@ -6,35 +6,37 @@ Authors: Mihai Criveti
 
 Property-based fuzz testing for Pydantic schema validation.
 """
+
+# Standard
 import json
-from hypothesis import given, strategies as st
-import pytest
+
+# Third-Party
+from hypothesis import given
+from hypothesis import strategies as st
 from pydantic import ValidationError
-from mcpgateway.schemas import (
-    ToolCreate, ResourceCreate, PromptCreate, GatewayCreate,
-    AuthenticationValues, AdminToolCreate, ServerCreate
-)
+import pytest
+
+# First-Party
+from mcpgateway.schemas import AuthenticationValues, GatewayCreate, PromptCreate, ResourceCreate, ToolCreate
 
 
 class TestToolCreateSchemaFuzzing:
     """Fuzz testing for ToolCreate schema validation."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=1, max_size=50),
-        values=st.one_of(
-            st.none(), st.booleans(), st.integers(),
-            st.floats(), st.text(max_size=100),
-            st.lists(st.text(max_size=20), max_size=5)
-        ),
-        max_size=20
-    ))
+    @given(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=50),
+            values=st.one_of(st.none(), st.booleans(), st.integers(), st.floats(), st.text(max_size=100), st.lists(st.text(max_size=20), max_size=5)),
+            max_size=20,
+        )
+    )
     def test_tool_create_schema_robust(self, data):
         """Test ToolCreate schema with arbitrary data."""
         try:
             tool = ToolCreate(**data)
             # If validation succeeds, basic required fields should be present
-            assert hasattr(tool, 'name')
-            if hasattr(tool, 'url') and tool.url:
+            assert hasattr(tool, "name")
+            if hasattr(tool, "url") and tool.url:
                 assert isinstance(tool.url, (str, type(tool.url)))
         except (ValidationError, TypeError, ValueError):
             # Expected for invalid data
@@ -55,14 +57,7 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.text(max_size=200),
-        st.integers(),
-        st.booleans(),
-        st.none(),
-        st.lists(st.text(max_size=20)),
-        st.dictionaries(st.text(max_size=10), st.text(max_size=10))
-    ))
+    @given(st.one_of(st.text(max_size=200), st.integers(), st.booleans(), st.none(), st.lists(st.text(max_size=20)), st.dictionaries(st.text(max_size=10), st.text(max_size=10))))
     def test_tool_create_url_field(self, url):
         """Test tool URL field with various data types."""
         try:
@@ -75,21 +70,11 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.sampled_from(["REST", "MCP"]),
-        st.text(max_size=50),
-        st.integers(),
-        st.booleans(),
-        st.none()
-    ))
+    @given(st.one_of(st.sampled_from(["REST", "MCP"]), st.text(max_size=50), st.integers(), st.booleans(), st.none()))
     def test_tool_create_integration_type(self, integration_type):
         """Test integration_type field with various inputs."""
         try:
-            tool = ToolCreate(
-                name="test",
-                url="http://example.com",
-                integration_type=integration_type
-            )
+            tool = ToolCreate(name="test", url="http://example.com", integration_type=integration_type)
             # If validation succeeds, should be one of the allowed values
             assert tool.integration_type in ["REST", "MCP"]
         except ValidationError:
@@ -98,20 +83,11 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.sampled_from(["GET", "POST", "PUT", "DELETE", "PATCH", "SSE", "STDIO", "STREAMABLEHTTP"]),
-        st.text(max_size=50),
-        st.integers(),
-        st.booleans()
-    ))
+    @given(st.one_of(st.sampled_from(["GET", "POST", "PUT", "DELETE", "PATCH", "SSE", "STDIO", "STREAMABLEHTTP"]), st.text(max_size=50), st.integers(), st.booleans()))
     def test_tool_create_request_type(self, request_type):
         """Test request_type field with various inputs."""
         try:
-            tool = ToolCreate(
-                name="test",
-                url="http://example.com",
-                request_type=request_type
-            )
+            tool = ToolCreate(name="test", url="http://example.com", request_type=request_type)
             # If validation succeeds, should be one of the allowed values
             assert tool.request_type in ["GET", "POST", "PUT", "DELETE", "PATCH", "SSE", "STDIO", "STREAMABLEHTTP"]
         except ValidationError:
@@ -120,25 +96,11 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=20),
-            values=st.text(max_size=100),
-            max_size=10
-        ),
-        st.text(max_size=100),
-        st.integers(),
-        st.booleans(),
-        st.none()
-    ))
+    @given(st.one_of(st.dictionaries(keys=st.text(min_size=1, max_size=20), values=st.text(max_size=100), max_size=10), st.text(max_size=100), st.integers(), st.booleans(), st.none()))
     def test_tool_create_headers_field(self, headers):
         """Test headers field with various data types."""
         try:
-            tool = ToolCreate(
-                name="test",
-                url="http://example.com",
-                headers=headers
-            )
+            tool = ToolCreate(name="test", url="http://example.com", headers=headers)
             # If validation succeeds, headers should be dict or None
             assert tool.headers is None or isinstance(tool.headers, dict)
         except ValidationError:
@@ -147,25 +109,19 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.dictionaries(
-            keys=st.text(min_size=1, max_size=20),
-            values=st.one_of(st.text(max_size=50), st.integers(), st.booleans()),
-            max_size=10
-        ),
-        st.text(max_size=100),
-        st.integers(),
-        st.booleans(),
-        st.none()
-    ))
+    @given(
+        st.one_of(
+            st.dictionaries(keys=st.text(min_size=1, max_size=20), values=st.one_of(st.text(max_size=50), st.integers(), st.booleans()), max_size=10),
+            st.text(max_size=100),
+            st.integers(),
+            st.booleans(),
+            st.none(),
+        )
+    )
     def test_tool_create_input_schema_field(self, input_schema):
         """Test input_schema field with various structures."""
         try:
-            tool = ToolCreate(
-                name="test",
-                url="http://example.com",
-                input_schema=input_schema
-            )
+            tool = ToolCreate(name="test", url="http://example.com", input_schema=input_schema)
             # If validation succeeds, input_schema should be dict or None
             assert isinstance(tool.input_schema, (dict, type(None)))
         except ValidationError:
@@ -174,19 +130,11 @@ class TestToolCreateSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.lists(
-        st.text(min_size=1, max_size=50),
-        min_size=0,
-        max_size=20
-    ))
+    @given(st.lists(st.text(min_size=1, max_size=50), min_size=0, max_size=20))
     def test_tool_create_tags_field(self, tags):
         """Test tags field with various lists."""
         try:
-            tool = ToolCreate(
-                name="test",
-                url="http://example.com",
-                tags=tags
-            )
+            tool = ToolCreate(name="test", url="http://example.com", tags=tags)
             # If validation succeeds, tags should be list of strings
             assert isinstance(tool.tags, list)
             assert all(isinstance(tag, str) for tag in tool.tags)
@@ -200,21 +148,14 @@ class TestToolCreateSchemaFuzzing:
 class TestResourceCreateSchemaFuzzing:
     """Fuzz testing for ResourceCreate schema validation."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=1, max_size=50),
-        values=st.one_of(
-            st.none(), st.booleans(), st.integers(),
-            st.floats(), st.text(max_size=100)
-        ),
-        max_size=15
-    ))
+    @given(st.dictionaries(keys=st.text(min_size=1, max_size=50), values=st.one_of(st.none(), st.booleans(), st.integers(), st.floats(), st.text(max_size=100)), max_size=15))
     def test_resource_create_schema_robust(self, data):
         """Test ResourceCreate schema with arbitrary data."""
         try:
             resource = ResourceCreate(**data)
             # If validation succeeds, basic fields should be present
-            assert hasattr(resource, 'uri')
-            assert hasattr(resource, 'name')
+            assert hasattr(resource, "uri")
+            assert hasattr(resource, "name")
         except (ValidationError, TypeError, ValueError):
             # Expected for invalid data
             pass
@@ -225,10 +166,7 @@ class TestResourceCreateSchemaFuzzing:
     def test_resource_create_uri_field(self, uri):
         """Test resource URI field with various inputs."""
         try:
-            resource = ResourceCreate(
-                uri=uri,
-                name="test"
-            )
+            resource = ResourceCreate(uri=uri, name="test")
             # If validation succeeds, URI should be string
             assert isinstance(resource.uri, str)
         except ValidationError:
@@ -241,21 +179,17 @@ class TestResourceCreateSchemaFuzzing:
 class TestPromptCreateSchemaFuzzing:
     """Fuzz testing for PromptCreate schema validation."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=1, max_size=50),
-        values=st.one_of(
-            st.none(), st.booleans(), st.integers(),
-            st.text(max_size=100),
-            st.lists(st.text(max_size=20), max_size=5)
-        ),
-        max_size=15
-    ))
+    @given(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=50), values=st.one_of(st.none(), st.booleans(), st.integers(), st.text(max_size=100), st.lists(st.text(max_size=20), max_size=5)), max_size=15
+        )
+    )
     def test_prompt_create_schema_robust(self, data):
         """Test PromptCreate schema with arbitrary data."""
         try:
             prompt = PromptCreate(**data)
             # If validation succeeds, basic fields should be present
-            assert hasattr(prompt, 'name')
+            assert hasattr(prompt, "name")
         except (ValidationError, TypeError, ValueError):
             # Expected for invalid data
             pass
@@ -266,21 +200,14 @@ class TestPromptCreateSchemaFuzzing:
 class TestGatewayCreateSchemaFuzzing:
     """Fuzz testing for GatewayCreate schema validation."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=1, max_size=50),
-        values=st.one_of(
-            st.none(), st.booleans(), st.integers(),
-            st.text(max_size=100)
-        ),
-        max_size=15
-    ))
+    @given(st.dictionaries(keys=st.text(min_size=1, max_size=50), values=st.one_of(st.none(), st.booleans(), st.integers(), st.text(max_size=100)), max_size=15))
     def test_gateway_create_schema_robust(self, data):
         """Test GatewayCreate schema with arbitrary data."""
         try:
             gateway = GatewayCreate(**data)
             # If validation succeeds, basic fields should be present
-            assert hasattr(gateway, 'name')
-            assert hasattr(gateway, 'url')
+            assert hasattr(gateway, "name")
+            assert hasattr(gateway, "url")
         except (ValidationError, TypeError, ValueError):
             # Expected for invalid data
             pass
@@ -291,10 +218,7 @@ class TestGatewayCreateSchemaFuzzing:
     def test_gateway_create_url_field(self, url):
         """Test gateway URL field with various inputs."""
         try:
-            gateway = GatewayCreate(
-                name="test",
-                url=url
-            )
+            gateway = GatewayCreate(name="test", url=url)
             # If validation succeeds, URL should be valid
             assert isinstance(gateway.url, (str, type(gateway.url)))
         except ValidationError:
@@ -307,33 +231,22 @@ class TestGatewayCreateSchemaFuzzing:
 class TestAuthenticationValuesSchemaFuzzing:
     """Fuzz testing for AuthenticationValues schema validation."""
 
-    @given(st.dictionaries(
-        keys=st.sampled_from([
-            "username", "password", "token", "auth_type",
-            "custom_header_name", "auth_header_value"
-        ]),
-        values=st.one_of(st.text(max_size=100), st.none()),
-        max_size=6
-    ))
+    @given(
+        st.dictionaries(keys=st.sampled_from(["username", "password", "token", "auth_type", "custom_header_name", "auth_header_value"]), values=st.one_of(st.text(max_size=100), st.none()), max_size=6)
+    )
     def test_auth_values_schema_robust(self, data):
         """Test AuthenticationValues schema with arbitrary data."""
         try:
             auth = AuthenticationValues(**data)
             # If validation succeeds, should have auth_type
-            assert hasattr(auth, 'auth_type')
+            assert hasattr(auth, "auth_type")
         except (ValidationError, TypeError, ValueError):
             # Expected for invalid data
             pass
         except Exception as e:
             pytest.fail(f"Unexpected exception: {type(e).__name__}: {e}")
 
-    @given(st.one_of(
-        st.sampled_from(["basic", "bearer", "custom"]),
-        st.text(max_size=50),
-        st.integers(),
-        st.booleans(),
-        st.none()
-    ))
+    @given(st.one_of(st.sampled_from(["basic", "bearer", "custom"]), st.text(max_size=50), st.integers(), st.booleans(), st.none()))
     def test_auth_type_field(self, auth_type):
         """Test auth_type field with various inputs."""
         try:
@@ -350,20 +263,17 @@ class TestAuthenticationValuesSchemaFuzzing:
 class TestComplexSchemaFuzzing:
     """Fuzz testing for complex schema interactions."""
 
-    @given(st.dictionaries(
-        keys=st.text(min_size=1, max_size=30),
-        values=st.recursive(
-            st.one_of(
-                st.none(), st.booleans(), st.integers(min_value=-1000, max_value=1000),
-                st.floats(allow_nan=False, allow_infinity=False),
-                st.text(max_size=100)
+    @given(
+        st.dictionaries(
+            keys=st.text(min_size=1, max_size=30),
+            values=st.recursive(
+                st.one_of(st.none(), st.booleans(), st.integers(min_value=-1000, max_value=1000), st.floats(allow_nan=False, allow_infinity=False), st.text(max_size=100)),
+                lambda children: st.lists(children, max_size=5) | st.dictionaries(st.text(max_size=20), children, max_size=5),
+                max_leaves=20,
             ),
-            lambda children: st.lists(children, max_size=5) |
-                           st.dictionaries(st.text(max_size=20), children, max_size=5),
-            max_leaves=20
-        ),
-        max_size=15
-    ))
+            max_size=15,
+        )
+    )
     def test_nested_schema_structures(self, data):
         """Test schemas with deeply nested data structures."""
         schemas = [ToolCreate, ResourceCreate, PromptCreate, GatewayCreate]
@@ -386,7 +296,7 @@ class TestComplexSchemaFuzzing:
             ("ToolCreate", {"name": large_text, "url": "http://example.com"}),
             ("ResourceCreate", {"uri": large_text, "name": "test"}),
             ("PromptCreate", {"name": large_text}),
-            ("GatewayCreate", {"name": large_text, "url": "http://example.com"})
+            ("GatewayCreate", {"name": large_text, "url": "http://example.com"}),
         ]
 
         for schema_name, data in test_cases:
@@ -410,7 +320,7 @@ class TestComplexSchemaFuzzing:
             "integration_type": "REST",
             "request_type": "POST",
             "headers": {"Content-Type": "application/json"},
-            "tags": ["test", "api"]
+            "tags": ["test", "api"],
         }
 
         try:
@@ -434,7 +344,7 @@ class TestComplexSchemaFuzzing:
         except Exception as e:
             pytest.fail(f"Unexpected exception in JSON round-trip: {type(e).__name__}: {e}")
 
-    @given(st.integers(min_value=-2**31, max_value=2**31))
+    @given(st.integers(min_value=-(2**31), max_value=2**31))
     def test_schema_with_extreme_integers(self, extreme_int):
         """Test schema validation with extreme integer values."""
         # Test with fields that might accept integers

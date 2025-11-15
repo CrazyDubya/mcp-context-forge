@@ -80,7 +80,7 @@ Create a `server_config.json` file to define your MCP Context Forge Gateway conn
       "command": "/path/to/mcp-context-forge/.venv/bin/python",
       "args": ["-m", "mcpgateway.wrapper"],
       "env": {
-        "MCP_AUTH": "<YOUR_AUTH_TOKEN_HERE>",
+        "MCP_AUTH": "Bearer <YOUR_AUTH_TOKEN_HERE>",
         "MCP_SERVER_URL": "http://localhost:4444",
         "MCP_TOOL_CALL_TIMEOUT": "120"
       }
@@ -106,7 +106,7 @@ Create a `server_config.json` file to define your MCP Context Forge Gateway conn
         "MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN}",
         "--entrypoint",
         "uv",
-        "ghcr.io/ibm/mcp-context-forge:0.6.0",
+        "ghcr.io/ibm/mcp-context-forge:0.9.0",
         "run",
         "--directory",
         "mcpgateway-wrapper",
@@ -124,7 +124,7 @@ Create a `server_config.json` file to define your MCP Context Forge Gateway conn
 
 ```bash
 # From your mcp-context-forge directory
-python3 -m mcpgateway.utils.create_jwt_token -u admin --exp 10080 --secret my-test-key
+python3 -m mcpgateway.utils.create_jwt_token -u admin@example.com --exp 10080 --secret my-test-key
 ```
 
 > **⚠️ Important Notes**
@@ -320,7 +320,7 @@ In interactive mode, use these commands:
 
 ```bash
 # MCP Context Forge Gateway connection
-export MCP_AUTH="your-jwt-token"
+export MCP_AUTH="Bearer your-jwt-token"
 export MCP_SERVER_URL="http://localhost:4444"
 
 # LLM Provider API keys
@@ -461,7 +461,7 @@ The mcp-cli integrates with MCP Context Forge Gateway through multiple connectio
          "command": "/path/to/mcp-context-forge/.venv/bin/python",
          "args": ["-m", "mcpgateway.wrapper"],
          "env": {
-           "MCP_AUTH": "your-jwt-token",
+           "MCP_AUTH": "Bearer <your-jwt-token>",
            "MCP_SERVER_URL": "http://localhost:4444"
          }
        }
@@ -486,10 +486,13 @@ docker run -d --name mcpgateway \
   -e JWT_SECRET_KEY=my-secret-key \
   -e BASIC_AUTH_USER=admin \
   -e BASIC_AUTH_PASSWORD=changeme \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  -e PLATFORM_ADMIN_EMAIL=admin@example.com \
+  -e PLATFORM_ADMIN_PASSWORD=changeme \
+  -e PLATFORM_ADMIN_FULL_NAME="Platform Administrator" \
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 
 # Generate token
-export MCPGATEWAY_BEARER_TOKEN=$(docker exec mcpgateway python3 -m mcpgateway.utils.create_jwt_token --username admin --exp 10080 --secret my-secret-key)
+export MCPGATEWAY_BEARER_TOKEN=$(docker exec mcpgateway python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 10080 --secret my-secret-key)
 
 # Test connection
 curl -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" http://localhost:4444/tools

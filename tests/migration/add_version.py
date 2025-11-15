@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Helper script to add a new version to migration testing.
+"""Location: ./tests/migration/add_version.py
+Copyright 2025
+SPDX-License-Identifier: Apache-2.0
+Authors: Mihai Criveti
+
+Helper script to add a new version to migration testing.
 
 This script demonstrates how to add a new version like 0.7.0 to the
 migration test suite. It shows exactly what needs to be updated.
@@ -9,11 +14,11 @@ Usage:
     python3 tests/migration/add_version.py 0.7.0
 """
 
-import sys
+# Standard
+from datetime import datetime
 import json
 from pathlib import Path
-from datetime import datetime
-from typing import Dict, Any
+import sys
 
 
 def show_instructions(new_version: str):
@@ -28,18 +33,18 @@ def show_instructions(new_version: str):
     print("1. Update version_config.py:")
     print(f"   - Add '{new_version}' to RELEASES list")
     print(f"   - Update CURRENT_VERSION to '{new_version}' if it's the new latest")
-    print(f"   - Add entry to RELEASE_INFO with metadata")
+    print("   - Add entry to RELEASE_INFO with metadata")
     print()
 
     print("2. Create test data file:")
     test_data_file = f"fixtures/test_data_sets/v{new_version.replace('.', '_')}_sample.json"
     print(f"   - Create {test_data_file}")
-    print(f"   - Base it on latest_sample.json structure")
+    print("   - Base it on latest_sample.json structure")
     print()
 
     print("3. Update container images:")
     print(f"   - Ensure ghcr.io/ibm/mcp-context-forge:{new_version} exists")
-    print(f"   - Run 'make migration-setup' to pull new images")
+    print("   - Run 'make migration-setup' to pull new images")
     print()
 
     print("4. The migration tests will automatically:")
@@ -83,7 +88,7 @@ def create_sample_test_data(new_version: str, output_path: Path):
         print(f"❌ Template file not found: {latest_file}")
         return
 
-    with open(latest_file, 'r') as f:
+    with open(latest_file, "r") as f:
         template_data = json.load(f)
 
     # Update metadata for new version
@@ -98,7 +103,7 @@ def create_sample_test_data(new_version: str, output_path: Path):
                     item["annotations"]["version"] = new_version
 
     # Write new test data file
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(template_data, f, indent=2)
 
     print(f"✅ Created sample test data: {output_path}")
@@ -113,7 +118,7 @@ def main():
     new_version = sys.argv[1]
 
     # Validate version format
-    if not new_version.replace('.', '').isdigit():
+    if not new_version.replace(".", "").isdigit():
         print(f"❌ Invalid version format: {new_version}")
         print("Expected format: x.y.z (e.g., 0.7.0)")
         sys.exit(1)
@@ -123,7 +128,7 @@ def main():
 
     # Offer to create sample test data
     response = input(f"\n📝 Create sample test data file for {new_version}? (y/n): ")
-    if response.lower().startswith('y'):
+    if response.lower().startswith("y"):
         script_dir = Path(__file__).parent
         test_data_file = script_dir / "fixtures" / "test_data_sets" / f"v{new_version.replace('.', '_')}_sample.json"
         test_data_file.parent.mkdir(parents=True, exist_ok=True)

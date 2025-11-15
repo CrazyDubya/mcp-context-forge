@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """Tests for configuration management."""
 
+# Standard
 import os
-import pytest
 from unittest.mock import patch
 
-from agent_runtimes.langchain_agent.config import get_settings, validate_environment, _parse_tools_list
+# Third-Party
+# First-Party
+from agent_runtimes.langchain_agent.config import _parse_tools_list, get_settings, validate_environment
 
 
 class TestParseToolsList:
@@ -58,7 +60,7 @@ class TestGetSettings:
             "MAX_ITERATIONS": "5",
             "TEMPERATURE": "0.5",
             "STREAMING_ENABLED": "false",
-            "TOOLS": "tool1,tool2"
+            "TOOLS": "tool1,tool2",
         }
 
         with patch.dict(os.environ, env_vars, clear=True):
@@ -76,10 +78,7 @@ class TestValidateEnvironment:
 
     def test_valid_environment(self):
         """Test validation with valid environment."""
-        env_vars = {
-            "OPENAI_API_KEY": "test-key",
-            "MCPGATEWAY_BEARER_TOKEN": "test-token"
-        }
+        env_vars = {"OPENAI_API_KEY": "test-key", "MCPGATEWAY_BEARER_TOKEN": "test-token"}
 
         with patch.dict(os.environ, env_vars, clear=True):
             result = validate_environment()
@@ -103,11 +102,7 @@ class TestValidateEnvironment:
 
     def test_invalid_numeric_values(self):
         """Test validation with invalid numeric values."""
-        env_vars = {
-            "OPENAI_API_KEY": "test-key",
-            "MAX_ITERATIONS": "invalid",
-            "TEMPERATURE": "not-a-number"
-        }
+        env_vars = {"OPENAI_API_KEY": "test-key", "MAX_ITERATIONS": "invalid", "TEMPERATURE": "not-a-number"}
 
         with patch.dict(os.environ, env_vars, clear=True):
             result = validate_environment()

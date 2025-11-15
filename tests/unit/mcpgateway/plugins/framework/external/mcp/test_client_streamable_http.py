@@ -6,15 +6,20 @@ Authors: Mihai Criveti
 
 Tests for external client on streamable http.
 """
+
+# Standard
 import os
 import subprocess
 import sys
 import time
 
+# Third-Party
 import pytest
 
-from mcpgateway.models import Message, PromptResult, Role, TextContent
-from mcpgateway.plugins.framework import ConfigLoader, PluginLoader, PluginContext, PromptPrehookPayload, PromptPosthookPayload
+# First-Party
+from mcpgateway.common.models import Message, PromptResult, Role, TextContent
+from mcpgateway.plugins.framework import ConfigLoader, GlobalContext, PluginContext, PluginLoader, PromptPosthookPayload, PromptPrehookPayload
+
 
 @pytest.fixture(autouse=True)
 def server_proc():
@@ -28,10 +33,11 @@ def server_proc():
             time.sleep(2)  # Give the server time to start
             yield server_proc
             server_proc.terminate()
-            server_proc.wait(timeout=3) # Wait for the subprocess to complete
+            server_proc.wait(timeout=3)  # Wait for the subprocess to complete
     except subprocess.TimeoutExpired:
-        server_proc.kill() # Force kill if timeout occurs
+        server_proc.kill()  # Force kill if timeout occurs
         server_proc.wait(timeout=3)
+
 
 @pytest.mark.skip(reason="Flaky, fails on Python 3.12, need to debug.")
 @pytest.mark.asyncio
@@ -42,8 +48,8 @@ async def test_client_load_streamable_http(server_proc):
 
     loader = PluginLoader()
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
-    prompt = PromptPrehookPayload(name="test_prompt", args = {"user": "What a crapshow!"})
-    context = PluginContext(request_id="1", server_id="2")
+    prompt = PromptPrehookPayload(name="test_prompt", args={"user": "What a crapshow!"})
+    context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))
     result = await plugin.prompt_pre_fetch(prompt, context)
     assert result.modified_payload.args["user"] == "What a yikesshow!"
     config = plugin.config
@@ -62,7 +68,8 @@ async def test_client_load_streamable_http(server_proc):
     await plugin.shutdown()
     await loader.shutdown()
     server_proc.terminate()
-    server_proc.wait() # Wait for the process to fully terminate
+    server_proc.wait()  # Wait for the process to fully terminate
+
 
 @pytest.fixture(autouse=True)
 def server_proc1():
@@ -76,10 +83,11 @@ def server_proc1():
             time.sleep(2)  # Give the server time to start
             yield server_proc
             server_proc.terminate()
-            server_proc.wait(timeout=3) # Wait for the subprocess to complete
+            server_proc.wait(timeout=3)  # Wait for the subprocess to complete
     except subprocess.TimeoutExpired:
-        server_proc.kill() # Force kill if timeout occurs
+        server_proc.kill()  # Force kill if timeout occurs
         server_proc.wait(timeout=3)
+
 
 @pytest.mark.skip(reason="Flaky, need to debug.")
 @pytest.mark.asyncio
@@ -90,8 +98,8 @@ async def test_client_load_strhttp_overrides(server_proc1):
 
     loader = PluginLoader()
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
-    prompt = PromptPrehookPayload(name="test_prompt", args = {"text": "That was innovative!"})
-    result = await plugin.prompt_pre_fetch(prompt, PluginContext(request_id="1", server_id="2"))
+    prompt = PromptPrehookPayload(name="test_prompt", args={"text": "That was innovative!"})
+    result = await plugin.prompt_pre_fetch(prompt, PluginContext(global_context=GlobalContext(request_id="1", server_id="2")))
     assert result.violation
     assert result.violation.reason == "Prompt not allowed"
     assert result.violation.description == "A deny word was found in the prompt"
@@ -106,7 +114,8 @@ async def test_client_load_strhttp_overrides(server_proc1):
     await plugin.shutdown()
     await loader.shutdown()
     server_proc1.terminate()
-    server_proc1.wait() # Wait for the process to fully terminate
+    server_proc1.wait()  # Wait for the process to fully terminate
+
 
 @pytest.fixture(autouse=True)
 def server_proc2():
@@ -120,10 +129,11 @@ def server_proc2():
             time.sleep(2)  # Give the server time to start
             yield server_proc
             server_proc.terminate()
-            server_proc.wait(timeout=3) # Wait for the subprocess to complete
+            server_proc.wait(timeout=3)  # Wait for the subprocess to complete
     except subprocess.TimeoutExpired:
-        server_proc.kill() # Force kill if timeout occurs
+        server_proc.kill()  # Force kill if timeout occurs
         server_proc.wait(timeout=3)
+
 
 @pytest.mark.skip(reason="Flaky, fails on Python 3.12, need to debug.")
 @pytest.mark.asyncio
@@ -134,8 +144,8 @@ async def test_client_load_strhttp_post_prompt(server_proc2):
 
     loader = PluginLoader()
     plugin = await loader.load_and_instantiate_plugin(config.plugins[0])
-    prompt = PromptPrehookPayload(name="test_prompt", args = {"user": "What a crapshow!"})
-    context = PluginContext(request_id="1", server_id="2")
+    prompt = PromptPrehookPayload(name="test_prompt", args={"user": "What a crapshow!"})
+    context = PluginContext(global_context=GlobalContext(request_id="1", server_id="2"))
     result = await plugin.prompt_pre_fetch(prompt, context)
     assert result.modified_payload.args["user"] == "What a yikesshow!"
     config = plugin.config
@@ -155,4 +165,4 @@ async def test_client_load_strhttp_post_prompt(server_proc2):
     await plugin.shutdown()
     await loader.shutdown()
     server_proc2.terminate()
-    server_proc2.wait() # Wait for the process to fully terminate
+    server_proc2.wait()  # Wait for the process to fully terminate

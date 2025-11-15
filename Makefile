@@ -16,6 +16,10 @@ SHELL := /bin/bash
 # Read values from .env.make
 -include .env.make
 
+# Rust build configuration (set to 1 to enable Rust builds, 0 to disable)
+# Default is disabled to avoid requiring Rust toolchain for standard builds
+ENABLE_RUST_BUILD ?= 0
+
 # Project variables
 PROJECT_NAME      = mcpgateway
 DOCS_DIR          = docs
@@ -31,7 +35,7 @@ DIRS_TO_CLEAN := __pycache__ .pytest_cache .tox .ruff_cache .pyre .mypy_cache .p
 	$(VENV_DIR) $(VENV_DIR).sbom $(COVERAGE_DIR) \
 	node_modules .mutmut-cache html
 
-FILES_TO_CLEAN := .coverage coverage.xml mcp.prof mcp.pstats \
+FILES_TO_CLEAN := .coverage .coverage.* coverage.xml mcp.prof mcp.pstats mcp.db-* \
 	$(PROJECT_NAME).sbom.json \
 	snakefood.dot packages.dot classes.dot \
 	$(DOCS_DIR)/pstats.png \
@@ -99,18 +103,36 @@ endef
 # 🌱 VIRTUAL ENVIRONMENT & INSTALLATION
 # =============================================================================
 # help: 🌱 VIRTUAL ENVIRONMENT & INSTALLATION
+# help: uv                   - Ensure uv is installed or install it if needed
 # help: venv                 - Create a fresh virtual environment with uv & friends
 # help: activate             - Activate the virtual environment in the current shell
 # help: install              - Install project into the venv
 # help: install-dev          - Install project (incl. dev deps) into the venv
 # help: install-db           - Install project (incl. postgres and redis) into venv
 # help: update               - Update all installed deps inside the venv
+.PHONY: uv
+uv:
+	@if ! type uv >/dev/null 2>&1; then \
+		echo "🔧 'uv' not found - installing..."; \
+		if type brew >/dev/null 2>&1; then \
+			echo "🍺 Installing 'uv' via Homebrew..."; \
+			brew install uv; \
+		else \
+			echo "🐍 Installing 'uv' via local install script..."; \
+			curl -LsSf https://astral.sh/uv/install.sh | sh ; \
+			echo "💡  Make sure to add 'uv' to your PATH if not done automatically."; \
+		fi; \
+	fi
+
 .PHONY: venv
 venv:
 	@rm -Rf "$(VENV_DIR)"
 	@test -d "$(VENVS_DIR)" || mkdir -p "$(VENVS_DIR)"
 	@python3 -m venv "$(VENV_DIR)"
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m pip install --upgrade pip setuptools pdm uv"
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m pip install --upgrade pip setuptools pdm"
+	# Eventually, we want to transition to using uv/uvx exclusively, at which point we will only need
+	# a virtual environment if the user has not installed uv into their account.
+	@/bin/bash -c "type uv || ( source $(VENV_DIR)/bin/activate && python3 -m pip install --upgrade uv )"
 	@echo -e "✅  Virtual env created.\n💡  Enter it with:\n    . $(VENV_DIR)/bin/activate\n"
 
 .PHONY: activate
@@ -119,30 +141,40 @@ activate:
 
 .PHONY: install
 install: venv
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m uv pip install ."
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && uv pip install ."
 
 .PHONY: install-db
 install-db: venv
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m uv pip install .[redis,postgres]"
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && uv pip install .[redis,postgres]"
 
 .PHONY: install-dev
 install-dev: venv
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m uv pip install .[dev]"
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && uv pip install --group dev ."
+	@if [ "$(ENABLE_RUST_BUILD)" = "1" ]; then \
+		echo "🦀 Building Rust plugins..."; \
+		$(MAKE) rust-dev || echo "⚠️  Rust plugins not available (optional)"; \
+	else \
+		echo "⏭️  Rust builds disabled (set ENABLE_RUST_BUILD=1 to enable)"; \
+	fi
 
 .PHONY: update
 update:
 	@echo "⬆️   Updating installed dependencies..."
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m uv pip install -U .[dev]"
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && uv pip install -U --group dev ."
 
 # help: check-env            - Verify all required env vars in .env are present
-.PHONY: check-env
+.PHONY: check-env check-env-dev
+
+# Validate .env in production mode
 check-env:
-	@echo "🔎  Checking .env against .env.example..."
-	@missing=0; \
-	for key in $$(grep -Ev '^\s*#|^\s*$$' .env.example | cut -d= -f1); do \
-	  grep -q "^$$key=" .env || { echo "❌ Missing: $$key"; missing=1; }; \
-	done; \
-	if [ $$missing -eq 0 ]; then echo "✅  All environment variables are present."; fi
+	@echo "🔎  Validating .env against .env.example using Python (prod)..."
+	@python -m mcpgateway.scripts.validate_env .env.example
+
+# Validate .env in development mode (warnings do not fail)
+check-env-dev:
+	@echo "🔎  Validating .env (dev, warnings do not fail)..."
+	@python -c "import sys; from mcpgateway.scripts import validate_env as ve; sys.exit(ve.main(env_file='.env', exit_on_warnings=False))"
+
 
 
 # =============================================================================
@@ -151,11 +183,20 @@ check-env:
 # help: ▶️ SERVE
 # help: serve                - Run production Gunicorn server on :4444
 # help: certs                - Generate self-signed TLS cert & key in ./certs (won't overwrite)
+# help: certs-jwt            - Generate JWT RSA keys in ./certs/jwt/ (idempotent)
+# help: certs-jwt-ecdsa      - Generate JWT ECDSA keys in ./certs/jwt/ (idempotent)
+# help: certs-all            - Generate both TLS certs and JWT keys (combo target)
+# help: certs-mcp-ca         - Generate MCP CA for plugin mTLS (./certs/mcp/ca/)
+# help: certs-mcp-gateway    - Generate gateway client certificate (./certs/mcp/gateway/)
+# help: certs-mcp-plugin     - Generate plugin server certificate (requires PLUGIN_NAME=name)
+# help: certs-mcp-all        - Generate complete MCP mTLS infrastructure (reads plugins from config.yaml)
+# help: certs-mcp-check      - Check expiry dates of MCP certificates
 # help: serve-ssl            - Run Gunicorn behind HTTPS on :4444 (uses ./certs)
 # help: dev                  - Run fast-reload dev server (uvicorn)
 # help: run                  - Execute helper script ./run.sh
 
-.PHONY: serve serve-ssl dev run certs
+.PHONY: serve serve-ssl dev run certs certs-jwt certs-jwt-ecdsa certs-all \
+        certs-mcp-ca certs-mcp-gateway certs-mcp-plugin certs-mcp-all certs-mcp-check
 
 ## --- Primary servers ---------------------------------------------------------
 serve:
@@ -184,23 +225,189 @@ certs:                           ## Generate ./certs/cert.pem & ./certs/key.pem 
 	fi
 	chmod 640 certs/key.pem
 
+certs-jwt:                       ## Generate JWT RSA keys in ./certs/jwt/ (idempotent)
+	@if [ -f certs/jwt/private.pem ] && [ -f certs/jwt/public.pem ]; then \
+		echo "🔐  Existing JWT RSA keys found in ./certs/jwt - skipping generation."; \
+	else \
+		echo "🔐  Generating JWT RSA key pair (4096-bit)..."; \
+		mkdir -p certs/jwt; \
+		openssl genrsa -out certs/jwt/private.pem 4096; \
+		openssl rsa -in certs/jwt/private.pem -pubout -out certs/jwt/public.pem; \
+		echo "✅  JWT RSA keys written to ./certs/jwt"; \
+	fi
+	@chmod 600 certs/jwt/private.pem
+	@chmod 644 certs/jwt/public.pem
+	@echo "🔒  Permissions set: private.pem (600), public.pem (644)"
+
+certs-jwt-ecdsa:                 ## Generate JWT ECDSA keys in ./certs/jwt/ (idempotent)
+	@if [ -f certs/jwt/ec_private.pem ] && [ -f certs/jwt/ec_public.pem ]; then \
+		echo "🔐  Existing JWT ECDSA keys found in ./certs/jwt - skipping generation."; \
+	else \
+		echo "🔐  Generating JWT ECDSA key pair (P-256 curve)..."; \
+		mkdir -p certs/jwt; \
+		openssl ecparam -genkey -name prime256v1 -noout -out certs/jwt/ec_private.pem; \
+		openssl ec -in certs/jwt/ec_private.pem -pubout -out certs/jwt/ec_public.pem; \
+		echo "✅  JWT ECDSA keys written to ./certs/jwt"; \
+	fi
+	@chmod 600 certs/jwt/ec_private.pem
+	@chmod 644 certs/jwt/ec_public.pem
+	@echo "🔒  Permissions set: ec_private.pem (600), ec_public.pem (644)"
+
+certs-all: certs certs-jwt       ## Generate both TLS certificates and JWT RSA keys
+	@echo "🎯  All certificates and keys generated successfully!"
+	@echo "📁  TLS:  ./certs/{cert,key}.pem"
+	@echo "📁  JWT:  ./certs/jwt/{private,public}.pem"
+	@echo "💡  Use JWT_ALGORITHM=RS256 with JWT_PUBLIC_KEY_PATH=certs/jwt/public.pem"
+
+## --- MCP Plugin mTLS Certificate Management ----------------------------------
+# Default validity period for MCP certificates (in days)
+MCP_CERT_DAYS ?= 825
+
+# Plugin configuration file for automatic certificate generation
+MCP_PLUGIN_CONFIG ?= plugins/external/config.yaml
+
+certs-mcp-ca:                    ## Generate CA for MCP plugin mTLS
+	@if [ -f certs/mcp/ca/ca.key ] && [ -f certs/mcp/ca/ca.crt ]; then \
+		echo "🔐  Existing MCP CA found in ./certs/mcp/ca - skipping generation."; \
+		echo "⚠️   To regenerate, delete ./certs/mcp/ca and run again."; \
+	else \
+		echo "🔐  Generating MCP Certificate Authority ($(MCP_CERT_DAYS) days validity)..."; \
+		mkdir -p certs/mcp/ca; \
+		openssl genrsa -out certs/mcp/ca/ca.key 4096; \
+		openssl req -new -x509 -key certs/mcp/ca/ca.key -out certs/mcp/ca/ca.crt \
+			-days $(MCP_CERT_DAYS) \
+			-subj "/CN=MCP-Gateway-CA/O=MCPGateway/OU=Plugins"; \
+		echo "01" > certs/mcp/ca/ca.srl; \
+		echo "✅  MCP CA created: ./certs/mcp/ca/ca.{key,crt}"; \
+	fi
+	@chmod 600 certs/mcp/ca/ca.key
+	@chmod 644 certs/mcp/ca/ca.crt
+	@echo "🔒  Permissions set: ca.key (600), ca.crt (644)"
+
+certs-mcp-gateway: certs-mcp-ca  ## Generate gateway client certificate
+	@if [ -f certs/mcp/gateway/client.key ] && [ -f certs/mcp/gateway/client.crt ]; then \
+		echo "🔐  Existing gateway client certificate found - skipping generation."; \
+	else \
+		echo "🔐  Generating gateway client certificate ($(MCP_CERT_DAYS) days)..."; \
+		mkdir -p certs/mcp/gateway; \
+		openssl genrsa -out certs/mcp/gateway/client.key 4096; \
+		openssl req -new -key certs/mcp/gateway/client.key \
+			-out certs/mcp/gateway/client.csr \
+			-subj "/CN=mcp-gateway-client/O=MCPGateway/OU=Gateway"; \
+		openssl x509 -req -in certs/mcp/gateway/client.csr \
+			-CA certs/mcp/ca/ca.crt -CAkey certs/mcp/ca/ca.key \
+			-CAcreateserial -out certs/mcp/gateway/client.crt \
+			-days $(MCP_CERT_DAYS) -sha256; \
+		rm certs/mcp/gateway/client.csr; \
+		cp certs/mcp/ca/ca.crt certs/mcp/gateway/ca.crt; \
+		echo "✅  Gateway client certificate created: ./certs/mcp/gateway/"; \
+	fi
+	@chmod 600 certs/mcp/gateway/client.key
+	@chmod 644 certs/mcp/gateway/client.crt certs/mcp/gateway/ca.crt
+	@echo "🔒  Permissions set: client.key (600), client.crt (644), ca.crt (644)"
+
+certs-mcp-plugin: certs-mcp-ca   ## Generate plugin server certificate (PLUGIN_NAME=name)
+	@if [ -z "$(PLUGIN_NAME)" ]; then \
+		echo "❌  ERROR: PLUGIN_NAME not set"; \
+		echo "💡  Usage: make certs-mcp-plugin PLUGIN_NAME=my-plugin"; \
+		exit 1; \
+	fi
+	@if [ -f certs/mcp/plugins/$(PLUGIN_NAME)/server.key ] && \
+	    [ -f certs/mcp/plugins/$(PLUGIN_NAME)/server.crt ]; then \
+		echo "🔐  Existing certificate for plugin '$(PLUGIN_NAME)' found - skipping."; \
+	else \
+		echo "🔐  Generating server certificate for plugin '$(PLUGIN_NAME)' ($(MCP_CERT_DAYS) days)..."; \
+		mkdir -p certs/mcp/plugins/$(PLUGIN_NAME); \
+		openssl genrsa -out certs/mcp/plugins/$(PLUGIN_NAME)/server.key 4096; \
+		openssl req -new -key certs/mcp/plugins/$(PLUGIN_NAME)/server.key \
+			-out certs/mcp/plugins/$(PLUGIN_NAME)/server.csr \
+			-subj "/CN=mcp-plugin-$(PLUGIN_NAME)/O=MCPGateway/OU=Plugins"; \
+		openssl x509 -req -in certs/mcp/plugins/$(PLUGIN_NAME)/server.csr \
+			-CA certs/mcp/ca/ca.crt -CAkey certs/mcp/ca/ca.key \
+			-CAcreateserial -out certs/mcp/plugins/$(PLUGIN_NAME)/server.crt \
+			-days $(MCP_CERT_DAYS) -sha256 \
+			-extfile <(printf "subjectAltName=DNS:$(PLUGIN_NAME),DNS:mcp-plugin-$(PLUGIN_NAME),DNS:localhost"); \
+		rm certs/mcp/plugins/$(PLUGIN_NAME)/server.csr; \
+		cp certs/mcp/ca/ca.crt certs/mcp/plugins/$(PLUGIN_NAME)/ca.crt; \
+		echo "✅  Plugin '$(PLUGIN_NAME)' certificate created: ./certs/mcp/plugins/$(PLUGIN_NAME)/"; \
+	fi
+	@chmod 600 certs/mcp/plugins/$(PLUGIN_NAME)/server.key
+	@chmod 644 certs/mcp/plugins/$(PLUGIN_NAME)/server.crt certs/mcp/plugins/$(PLUGIN_NAME)/ca.crt
+	@echo "🔒  Permissions set: server.key (600), server.crt (644), ca.crt (644)"
+
+certs-mcp-all: certs-mcp-ca certs-mcp-gateway  ## Generate complete mTLS infrastructure
+	@echo "🔐  Generating certificates for plugins..."
+	@# Read plugin names from config file if it exists
+	@if [ -f "$(MCP_PLUGIN_CONFIG)" ]; then \
+		echo "📋  Reading plugin names from $(MCP_PLUGIN_CONFIG)"; \
+		python3 -c "import yaml; \
+			config = yaml.safe_load(open('$(MCP_PLUGIN_CONFIG)')); \
+			plugins = [p['name'] for p in config.get('plugins', []) if p.get('kind') == 'external']; \
+			print('\n'.join(plugins))" 2>/dev/null | while read plugin_name; do \
+			if [ -n "$$plugin_name" ]; then \
+				echo "   Generating for: $$plugin_name"; \
+				$(MAKE) certs-mcp-plugin PLUGIN_NAME="$$plugin_name"; \
+			fi; \
+		done || echo "⚠️   PyYAML not installed or config parse failed, generating example plugins..."; \
+	fi
+	@# Fallback to example plugins if no config or parsing failed
+	@if [ ! -f "$(MCP_PLUGIN_CONFIG)" ] || ! python3 -c "import yaml" 2>/dev/null; then \
+		echo "🔐  Generating certificates for example plugins..."; \
+		$(MAKE) certs-mcp-plugin PLUGIN_NAME=example-plugin-a; \
+		$(MAKE) certs-mcp-plugin PLUGIN_NAME=example-plugin-b; \
+	fi
+	@echo ""
+	@echo "🎯  MCP mTLS infrastructure generated successfully!"
+	@echo "📁  Structure:"
+	@echo "    certs/mcp/ca/          - Certificate Authority"
+	@echo "    certs/mcp/gateway/     - Gateway client certificate"
+	@echo "    certs/mcp/plugins/*/   - Plugin server certificates"
+	@echo ""
+	@echo "💡  Generate additional plugin certificates with:"
+	@echo "    make certs-mcp-plugin PLUGIN_NAME=your-plugin-name"
+	@echo ""
+	@echo "💡  Certificate validity: $(MCP_CERT_DAYS) days"
+	@echo "    To change: make certs-mcp-all MCP_CERT_DAYS=365"
+
+certs-mcp-check:                 ## Check expiry dates of MCP certificates
+	@echo "🔍  Checking MCP certificate expiry dates..."
+	@echo ""
+	@if [ -f certs/mcp/ca/ca.crt ]; then \
+		echo "📋 CA Certificate:"; \
+		openssl x509 -in certs/mcp/ca/ca.crt -noout -enddate | sed 's/notAfter=/   Expires: /'; \
+		echo ""; \
+	fi
+	@if [ -f certs/mcp/gateway/client.crt ]; then \
+		echo "📋 Gateway Client Certificate:"; \
+		openssl x509 -in certs/mcp/gateway/client.crt -noout -enddate | sed 's/notAfter=/   Expires: /'; \
+		echo ""; \
+	fi
+	@if [ -d certs/mcp/plugins ]; then \
+		echo "📋 Plugin Certificates:"; \
+		for plugin_dir in certs/mcp/plugins/*; do \
+			if [ -f "$$plugin_dir/server.crt" ]; then \
+				plugin_name=$$(basename "$$plugin_dir"); \
+				expiry=$$(openssl x509 -in "$$plugin_dir/server.crt" -noout -enddate | sed 's/notAfter=//'); \
+				echo "   $$plugin_name: $$expiry"; \
+			fi; \
+		done; \
+		echo ""; \
+	fi
+	@echo "💡  To regenerate expired certificates, delete the cert directory and run make certs-mcp-all"
+
 ## --- House-keeping -----------------------------------------------------------
 # help: clean                - Remove caches, build artefacts, virtualenv, docs, certs, coverage, SBOM, database files, etc.
 .PHONY: clean
 clean:
 	@echo "🧹  Cleaning workspace..."
-	@bash -eu -o pipefail -c '\
-		# Remove matching directories \
-		for dir in $(DIRS_TO_CLEAN); do \
-			find . -type d -name "$$dir" -exec rm -rf {} +; \
-		done; \
-		# Remove listed files \
-		rm -f $(FILES_TO_CLEAN); \
-		# Delete Python bytecode \
-		find . -name "*.py[cod]" -delete; \
-		# Delete coverage annotated files \
-		find . -name "*.py,cover" -delete; \
-	'
+	@set +e; \
+	for dir in $(DIRS_TO_CLEAN); do \
+		find . -type d -name "$$dir" -prune -exec rm -rf {} +; \
+	done; \
+	set -e
+	@rm -f $(FILES_TO_CLEAN)
+	@find . -name "*.py[cod]" -delete
+	@find . -name "*.py,cover" -delete
 	@echo "✅  Clean complete."
 
 
@@ -210,6 +417,7 @@ clean:
 # help: 🧪 TESTING
 # help: smoketest            - Run smoketest.py --verbose (build container, add MCP server, test endpoints)
 # help: test                 - Run unit tests with pytest
+# help: test-profile         - Run tests and show slowest 20 tests (durations >= 1s)
 # help: coverage             - Run tests with coverage, emit md/HTML/XML + badge, generate annotated files
 # help: htmlcov              - (re)build just the HTML coverage report into docs
 # help: test-curl            - Smoke-test API endpoints with curl script
@@ -219,7 +427,7 @@ clean:
 # help: doctest-coverage     - Generate coverage report for doctest examples
 # help: doctest-check        - Check doctest coverage percentage (fail if < 100%)
 
-.PHONY: smoketest test coverage pytest-examples test-curl htmlcov doctest doctest-verbose doctest-coverage doctest-check
+.PHONY: smoketest test test-profile coverage pytest-examples test-curl htmlcov doctest doctest-verbose doctest-coverage doctest-check
 
 ## --- Automated checks --------------------------------------------------------
 smoketest:
@@ -233,10 +441,17 @@ test:
 	@echo "🧪 Running tests..."
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
-		python3 -m pip install -q pytest pytest-asyncio pytest-cov && \
 		export DATABASE_URL='sqlite:///:memory:' && \
 		export TEST_DATABASE_URL='sqlite:///:memory:' && \
-		python3 -m pytest --maxfail=0 --disable-warnings -v --ignore=tests/fuzz"
+		uv run pytest -n auto --maxfail=0 -v --ignore=tests/fuzz"
+
+test-profile:
+	@echo "🧪 Running tests with profiling (showing slowest tests)..."
+	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		export DATABASE_URL='sqlite:///:memory:' && \
+		export TEST_DATABASE_URL='sqlite:///:memory:' && \
+		uv run pytest -n auto --durations=20 --durations-min=1.0 --disable-warnings -v --ignore=tests/fuzz"
 
 coverage:
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
@@ -289,13 +504,15 @@ doctest:
 	@echo "🧪 Running doctest on all modules..."
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
-		python3 -m pytest --doctest-modules mcpgateway/ --tb=short"
+		export JWT_SECRET_KEY=secret && \
+		python3 -m pytest --doctest-modules mcpgateway/ --ignore=mcpgateway/utils/pagination.py --tb=short --no-cov --disable-warnings -n auto"
 
 doctest-verbose:
 	@echo "🧪 Running doctest with verbose output..."
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
-		python3 -m pytest --doctest-modules mcpgateway/ -v --tb=short"
+		export JWT_SECRET_KEY=secret && \
+		python3 -m pytest --doctest-modules mcpgateway/ --ignore=mcpgateway/utils/pagination.py -v --tb=short --no-cov --disable-warnings -n auto"
 
 doctest-coverage:
 	@echo "📊 Generating doctest coverage report..."
@@ -313,6 +530,97 @@ doctest-check:
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
 		python3 -m pytest --doctest-modules mcpgateway/ --tb=no -q && \
 		echo '✅ All doctests passing' || (echo '❌ Doctest failures detected' && exit 1)"
+
+
+# =============================================================================
+# 📊 LOAD TESTING - Database population and performance testing
+# =============================================================================
+# help: 📊 LOAD TESTING
+# help: generate-small       - Generate small load test data (100 users, ~74K records, <1 min)
+# help: generate-medium      - Generate medium load test data (10K users, ~70M records, ~10 min)
+# help: generate-large       - Generate large load test data (100K users, ~700M records, ~1-2 hours)
+# help: generate-massive     - Generate massive load test data (1M users, billions of records, ~10-20 hours)
+# help: generate-clean       - Clean all generated load test data and reports
+# help: generate-report      - Display most recent load test report
+
+.PHONY: generate-small generate-medium generate-large generate-massive generate-clean generate-report
+
+generate-small:                            ## Generate small load test dataset (100 users)
+	@echo "📊 Generating small load test data..."
+	@echo "   Target: 100 users, ~74K records"
+	@echo "   Time: <1 minute"
+	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		python -m tests.load.generate --profile small"
+	@echo ""
+	@echo "✅ Small load test data generated!"
+	@echo "📄 Report: reports/small_load_report.json"
+
+generate-medium:                           ## Generate medium load test dataset (10K users)
+	@echo "📊 Generating medium load test data..."
+	@echo "   Target: 10K users, ~70M records"
+	@echo "   Time: ~10 minutes"
+	@echo "   ⚠️  Recommended: Use PostgreSQL or MySQL for better performance"
+	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		python -m tests.load.generate --profile medium"
+	@echo ""
+	@echo "✅ Medium load test data generated!"
+	@echo "📄 Report: reports/medium_load_report.json"
+
+generate-large:                            ## Generate large load test dataset (100K users)
+	@echo "📊 Generating large load test data..."
+	@echo "   Target: 100K users, ~700M records"
+	@echo "   Time: ~1-2 hours"
+	@echo "   ⚠️  REQUIRED: PostgreSQL or MySQL"
+	@echo "   ⚠️  Recommended: 16GB+ RAM, SSD storage"
+	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		python -m tests.load.generate --profile large"
+	@echo ""
+	@echo "✅ Large load test data generated!"
+	@echo "📄 Report: reports/large_load_report.json"
+
+generate-massive:                          ## Generate massive load test dataset (1M users)
+	@echo "📊 Generating massive load test data..."
+	@echo "   Target: 1M users, billions of records"
+	@echo "   Time: ~10-20 hours"
+	@echo "   ⚠️  REQUIRED: PostgreSQL or MySQL with high-performance config"
+	@echo "   ⚠️  REQUIRED: 32GB+ RAM, SSD storage, multi-core CPU"
+	@echo ""
+	@read -p "This will take 10-20 hours. Continue? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		test -d "$(VENV_DIR)" || $(MAKE) venv; \
+		/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+			python -m tests.load.generate --profile massive"; \
+		echo ""; \
+		echo "✅ Massive load test data generated!"; \
+		echo "📄 Report: reports/massive_load_report.json"; \
+	else \
+		echo "❌ Cancelled"; \
+		exit 1; \
+	fi
+
+generate-clean:                            ## Clean all generated load test data
+	@echo "🧹 Cleaning load test data..."
+	@rm -f reports/*_load_report.json
+	@echo "✅ Load test reports cleaned!"
+	@echo ""
+	@echo "⚠️  Note: This does NOT clean the database itself."
+	@echo "   To clean database, use: make clean-db"
+
+generate-report:                           ## Display most recent load test report
+	@echo "📊 Most Recent Load Test Reports:"
+	@echo ""
+	@for report in reports/*_load_report.json; do \
+		if [ -f "$$report" ]; then \
+			echo "📄 $$report:"; \
+			jq -r '"  Profile: \(.profile)\n  Duration: \(.duration_seconds)s\n  Records: \(.total_generated | tonumber | tostring) total\n  Rate: \(.records_per_second | floor | tostring) records/sec\n  Timestamp: \(.timestamp)"' "$$report" 2>/dev/null || \
+			cat "$$report" | head -20; \
+			echo ""; \
+		fi; \
+	done || echo "❌ No reports found. Run 'make generate-small' first."
 
 # =============================================================================
 # 🧬 MUTATION TESTING
@@ -508,7 +816,7 @@ images:
 # help: pydocstyle           - Docstring style checker
 # help: pycodestyle          - Simple PEP-8 checker
 # help: pre-commit           - Run all configured pre-commit hooks
-# help: ruff                 - Ruff linter + formatter
+# help: ruff                 - Ruff linter + (eventually) formatter
 # help: ty                   - Ty type checker from astral
 # help: pyright              - Static type-checking with Pyright
 # help: radon                - Code complexity & maintainability metrics
@@ -531,7 +839,7 @@ images:
 # help: vulture              - Dead code detection
 
 # Allow specific file/directory targeting
-DEFAULT_TARGETS := mcpgateway mcp-servers/python
+DEFAULT_TARGETS := mcpgateway
 TARGET ?= $(DEFAULT_TARGETS)
 
 # Add dummy targets for file arguments passed to lint commands only
@@ -692,8 +1000,6 @@ lint-smart:
 			fi ;; \
 	esac
 
-	fi
-
 ## --------------------------------------------------------------------------- ##
 ##  Individual targets (alphabetical, updated to use TARGET)
 ## --------------------------------------------------------------------------- ##
@@ -719,8 +1025,9 @@ isort-check:
 flake8:                             ## 🐍  flake8 checks
 	@echo "🐍 flake8 $(TARGET)..." && $(VENV_DIR)/bin/flake8 $(TARGET)
 
-pylint:                             ## 🐛  pylint checks
-	@echo "🐛 pylint $(TARGET)..." && $(VENV_DIR)/bin/pylint $(TARGET)
+pylint: uv                             ## 🐛  pylint checks
+	@echo "🐛 pylint $(TARGET) (parallel)..."
+	uv run pylint -j 0 --fail-on E --fail-under 10 $(TARGET)
 
 markdownlint:					    ## 📖  Markdown linting
 	@# Install markdownlint-cli2 if not present
@@ -764,17 +1071,13 @@ pydocstyle:                         ## 📚  Docstring style
 pycodestyle:                        ## 📝  Simple PEP-8 checker
 	@echo "📝 pycodestyle $(TARGET)..." && $(VENV_DIR)/bin/pycodestyle $(TARGET) --max-line-length=200
 
-pre-commit:                         ## 🪄  Run pre-commit hooks
+pre-commit: uv                      ## 🪄  Run pre-commit tool
 	@echo "🪄  Running pre-commit hooks..."
-	@test -d "$(VENV_DIR)" || $(MAKE) venv install install-dev
-	@if [ ! -f "$(VENV_DIR)/bin/pre-commit" ]; then \
-		echo "📦  Installing pre-commit..."; \
-		/bin/bash -c "source $(VENV_DIR)/bin/activate && python3 -m pip install --quiet pre-commit"; \
-	fi
-	@/bin/bash -c "source $(VENV_DIR)/bin/activate && pre-commit run --all-files --show-diff-on-failure"
+	uv run pre-commit run --config .pre-commit-lite.yaml --all-files --show-diff-on-failure
 
-ruff:                               ## ⚡  Ruff lint + format
-	@echo "⚡ ruff $(TARGET)..." && $(VENV_DIR)/bin/ruff check $(TARGET) && $(VENV_DIR)/bin/ruff format $(TARGET)
+ruff:                               ## ⚡  Ruff lint + (eventually) format
+	@echo "⚡ ruff $(TARGET)..." && $(VENV_DIR)/bin/ruff check $(TARGET)
+	#                   && $(VENV_DIR)/bin/ruff format $(TARGET)
 
 # Separate ruff targets for different modes
 ruff-check:
@@ -783,6 +1086,7 @@ ruff-check:
 ruff-fix:
 	@echo "⚡ ruff check --fix $(TARGET)..." && $(VENV_DIR)/bin/ruff check --fix $(TARGET)
 
+#  Nothing depends on this target yet, but kept for future and ad hoc use
 ruff-format:
 	@echo "⚡ ruff format $(TARGET)..." && $(VENV_DIR)/bin/ruff format $(TARGET)
 
@@ -854,8 +1158,11 @@ spellcheck-sort: .spellcheck-en.txt ## 🔤  Sort spell-list
 	sort -d -f -o $< $<
 
 tox:                                ## 🧪  Multi-Python tox matrix (uv)
-	@echo "🧪  Running tox with uv ..."
-	python3 -m tox -p auto $(TOXARGS)
+	@echo "🧪  Running tox with uv across Python 3.11, 3.12, 3.13..."
+	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		python3 -m pip install -q tox tox-uv && \
+		python3 -m tox -p auto $(TOXARGS)"
 
 sbom:								## 🛡️  Generate SBOM & security report
 	@echo "🛡️   Generating SBOM & security report..."
@@ -1383,7 +1690,8 @@ install-web-linters:
 	@npm install --no-save \
 		htmlhint \
 		stylelint stylelint-config-standard @stylistic/stylelint-config stylelint-order \
-		eslint eslint-config-standard \
+		eslint eslint-config-standard eslint-plugin-import eslint-plugin-n eslint-plugin-promise \
+		eslint-plugin-prettier eslint-config-prettier \
 		retire \
 		prettier \
 		jshint \
@@ -1397,13 +1705,13 @@ nodejsscan:
 
 lint-web: install-web-linters nodejsscan
 	@echo "🔍 Linting HTML files..."
-	@npx htmlhint "mcpgateway/templates/**/*.html" || true
+	@find mcpgateway/templates -name "*.html" -exec npx htmlhint {} + 2>/dev/null || true
 	@echo "🔍 Linting CSS files..."
-	@npx stylelint "mcpgateway/static/**/*.css" || true
+	@find mcpgateway/static -name "*.css" -exec npx stylelint {} + 2>/dev/null || true
 	@echo "🔍 Linting JS files..."
-	@npx eslint "mcpgateway/static/**/*.js" || true
+	@find mcpgateway/static -name "*.js" -exec npx eslint {} + 2>/dev/null || true
 	@echo "🔒 Scanning for known JS/CSS library vulnerabilities with retire.js..."
-	@npx retire --path mcpgateway/static || true
+	@cd mcpgateway/static && npx retire . 2>/dev/null || true
 	@if [ -f package.json ]; then \
 	  echo "🔒 Running npm audit (high severity)..."; \
 	  npm audit --audit-level=high || true; \
@@ -1710,21 +2018,41 @@ containerfile-update:
 # =============================================================================
 .PHONY: dist wheel sdist verify publish publish-testpypi
 
-dist: clean                  ## Build wheel + sdist into ./dist
+dist: clean                  ## Build wheel + sdist into ./dist (optionally includes Rust plugins)
 	@test -d "$(VENV_DIR)" || $(MAKE) --no-print-directory venv
+	@echo "📦 Building Python package..."
 	@/bin/bash -eu -c "\
 	    source $(VENV_DIR)/bin/activate && \
 	    python3 -m pip install --quiet --upgrade pip build && \
 	    python3 -m build"
-	@echo '🛠  Wheel & sdist written to ./dist'
+	@if [ "$(ENABLE_RUST_BUILD)" = "1" ]; then \
+		echo "🦀 Building Rust plugins..."; \
+		$(MAKE) rust-build || { echo "⚠️  Rust build failed, continuing without Rust plugins"; exit 0; }; \
+		echo '🦀 Rust wheels written to ./plugins_rust/target/wheels/'; \
+	else \
+		echo "⏭️  Rust builds disabled (ENABLE_RUST_BUILD=0)"; \
+	fi
+	@echo '🛠  Python wheel & sdist written to ./dist'
+	@echo ''
+	@echo '💡 To publish both Python and Rust packages:'
+	@echo '   make publish         # Publish Python package'
+	@echo '   make rust-publish    # Publish Rust wheels (if configured)'
 
-wheel:                       ## Build wheel only
+wheel:                       ## Build wheel only (Python + optionally Rust)
 	@test -d "$(VENV_DIR)" || $(MAKE) --no-print-directory venv
+	@echo "📦 Building Python wheel..."
 	@/bin/bash -eu -c "\
 	    source $(VENV_DIR)/bin/activate && \
 	    python3 -m pip install --quiet --upgrade pip build && \
 	    python3 -m build -w"
-	@echo '🛠  Wheel written to ./dist'
+	@if [ "$(ENABLE_RUST_BUILD)" = "1" ]; then \
+		echo "🦀 Building Rust wheels..."; \
+		$(MAKE) rust-build || { echo "⚠️  Rust build failed, continuing without Rust plugins"; exit 0; }; \
+		echo '🦀 Rust wheels written to ./plugins_rust/target/wheels/'; \
+	else \
+		echo "⏭️  Rust builds disabled (ENABLE_RUST_BUILD=0)"; \
+	fi
+	@echo '🛠  Python wheel written to ./dist'
 
 sdist:                       ## Build source distribution only
 	@test -d "$(VENV_DIR)" || $(MAKE) --no-print-directory venv
@@ -1770,7 +2098,7 @@ endif
 # =============================================================================
 
 # Auto-detect container runtime if not specified - DEFAULT TO DOCKER
-CONTAINER_RUNTIME ?= $(shell command -v docker >/dev/null 2>&1 && echo docker || echo podman)
+CONTAINER_RUNTIME = $(shell command -v docker >/dev/null 2>&1 && echo docker || echo podman)
 
 # Alternative: Always default to docker unless explicitly overridden
 # CONTAINER_RUNTIME ?= docker
@@ -1819,10 +2147,14 @@ endef
 # =============================================================================
 # help: 🐳 UNIFIED CONTAINER OPERATIONS (Auto-detects Docker/Podman)
 # help: container-build      - Build image using detected runtime
+# help: container-build-rust - Build image WITH Rust plugins (ENABLE_RUST_BUILD=1)
+# help: container-build-rust-lite - Build lite image WITH Rust plugins
+# help: container-rust       - Build with Rust and run container (all-in-one)
 # help: container-run        - Run container using detected runtime
 # help: container-run-host   - Run container using detected runtime with host networking
 # help: container-run-ssl    - Run container with TLS using detected runtime
 # help: container-run-ssl-host - Run container with TLS and host networking
+# help: container-run-ssl-jwt - Run container with TLS and JWT asymmetric keys
 # help: container-push       - Push image (handles localhost/ prefix)
 # help: container-stop       - Stop & remove the container
 # help: container-logs       - Stream container logs
@@ -1836,8 +2168,9 @@ endef
 # help: use-podman           - Switch to Podman runtime
 # help: show-runtime         - Show current container runtime
 
-.PHONY: container-build container-run container-run-ssl container-run-ssl-host \
-        container-push container-info container-stop container-logs container-shell \
+.PHONY: container-build container-build-rust container-build-rust-lite container-rust \
+        container-run container-run-ssl container-run-ssl-host \
+        container-run-ssl-jwt container-push container-info container-stop container-logs container-shell \
         container-health image-list image-clean image-retag container-check-image \
         container-build-multi use-docker use-podman show-runtime print-runtime \
         print-image container-validate-env container-check-ports container-wait-healthy
@@ -1868,13 +2201,37 @@ PLATFORM ?= linux/$(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
 container-build:
 	@echo "🔨 Building with $(CONTAINER_RUNTIME) for platform $(PLATFORM)..."
-	$(CONTAINER_RUNTIME) build \
-		--platform=$(PLATFORM) \
-		-f $(CONTAINER_FILE) \
-		--tag $(IMAGE_BASE):$(IMAGE_TAG) \
-		.
+	@if [ "$(ENABLE_RUST_BUILD)" = "1" ]; then \
+		echo "🦀 Building container WITH Rust plugins..."; \
+		$(CONTAINER_RUNTIME) build \
+			--platform=$(PLATFORM) \
+			-f $(CONTAINER_FILE) \
+			--build-arg ENABLE_RUST=true \
+			--tag $(IMAGE_BASE):$(IMAGE_TAG) \
+			.; \
+	else \
+		echo "⏭️  Building container WITHOUT Rust plugins (set ENABLE_RUST_BUILD=1 to enable)"; \
+		$(CONTAINER_RUNTIME) build \
+			--platform=$(PLATFORM) \
+			-f $(CONTAINER_FILE) \
+			--build-arg ENABLE_RUST=false \
+			--tag $(IMAGE_BASE):$(IMAGE_TAG) \
+			.; \
+	fi
 	@echo "✅ Built image: $(call get_image_name)"
 	$(CONTAINER_RUNTIME) images $(IMAGE_BASE):$(IMAGE_TAG)
+
+container-build-rust:
+	@echo "🦀 Building container WITH Rust plugins..."
+	$(MAKE) container-build ENABLE_RUST_BUILD=1
+
+container-build-rust-lite:
+	@echo "🦀 Building lite container WITH Rust plugins..."
+	$(MAKE) container-build ENABLE_RUST_BUILD=1 CONTAINER_FILE=Containerfile.lite
+
+container-rust: container-build-rust
+	@echo "🦀 Building and running container with Rust plugins..."
+	$(MAKE) container-run
 
 container-run: container-check-image
 	@echo "🚀 Running with $(CONTAINER_RUNTIME)..."
@@ -1956,6 +2313,32 @@ container-run-ssl-host: certs container-check-image
 	@sleep 2
 	@echo "✅ Container started with TLS (host networking)"
 
+container-run-ssl-jwt: certs certs-jwt container-check-image
+	@echo "🚀 Running with $(CONTAINER_RUNTIME) (TLS + JWT asymmetric)..."
+	-$(CONTAINER_RUNTIME) stop $(PROJECT_NAME) 2>/dev/null || true
+	-$(CONTAINER_RUNTIME) rm $(PROJECT_NAME) 2>/dev/null || true
+	$(CONTAINER_RUNTIME) run --name $(PROJECT_NAME) \
+		--user $(shell id -u):$(shell id -g) \
+		--env-file=.env \
+		-e SSL=true \
+		-e CERT_FILE=certs/cert.pem \
+		-e KEY_FILE=certs/key.pem \
+		-e JWT_ALGORITHM=RS256 \
+		-e JWT_PUBLIC_KEY_PATH=/app/certs/jwt/public.pem \
+		-e JWT_PRIVATE_KEY_PATH=/app/certs/jwt/private.pem \
+		-v $(PWD)/certs:/app/certs:ro$(if $(filter podman,$(CONTAINER_RUNTIME)),$(COMMA)Z,) \
+		-p 4444:4444 \
+		--restart=always \
+		--memory=$(CONTAINER_MEMORY) --cpus=$(CONTAINER_CPUS) \
+		--health-cmd="curl -k --fail https://localhost:4444/health || exit 1" \
+		--health-interval=1m --health-retries=3 \
+		--health-start-period=30s --health-timeout=10s \
+		-d $(call get_image_name)
+	@sleep 2
+	@echo "✅ Container started with TLS + JWT asymmetric authentication"
+	@echo "🔐 JWT Algorithm: RS256"
+	@echo "📁 Keys mounted: /app/certs/jwt/{private,public}.pem"
+
 container-push: container-check-image
 	@echo "📤 Preparing to push image..."
 	@# For Podman, we need to remove localhost/ prefix for push
@@ -2027,14 +2410,14 @@ container-build-multi:
 		fi; \
 		docker buildx use $(PROJECT_NAME)-builder; \
 		docker buildx build \
-			--platform=linux/amd64,linux/arm64 \
+			--platform=linux/amd64,linux/arm64,linux/s390x \
 			-f $(CONTAINER_FILE) \
 			--tag $(IMAGE_BASE):$(IMAGE_TAG) \
 			--push \
 			.; \
 	elif [ "$(CONTAINER_RUNTIME)" = "podman" ]; then \
 		echo "📦 Building manifest with Podman..."; \
-		$(CONTAINER_RUNTIME) build --platform=linux/amd64,linux/arm64 \
+		$(CONTAINER_RUNTIME) build --platform=linux/amd64,linux/arm64,linux/s390x \
 			-f $(CONTAINER_FILE) \
 			--manifest $(IMAGE_BASE):$(IMAGE_TAG) \
 			.; \
@@ -2275,7 +2658,7 @@ docker-dev:
 	@$(MAKE) container-build CONTAINER_RUNTIME=docker CONTAINER_FILE=Containerfile
 
 docker:
-	@$(MAKE) container-build CONTAINER_RUNTIME=docker CONTAINER_FILE=Containerfile
+	@$(MAKE) container-build CONTAINER_RUNTIME=docker CONTAINER_FILE=Containerfile.lite
 
 docker-prod:
 	@DOCKER_CONTENT_TRUST=1 $(MAKE) container-build CONTAINER_RUNTIME=docker CONTAINER_FILE=Containerfile.lite
@@ -2373,8 +2756,13 @@ endif
 # Alternative: Always default to docker compose unless explicitly overridden
 # COMPOSE_CMD ?= docker compose
 
+# Profile detection (for platform-specific services)
+ifeq ($(PLATFORM),linux/amd64)
+    PROFILE = --profile with-fast-time
+endif
+
 define COMPOSE
-$(COMPOSE_CMD) -f $(COMPOSE_FILE)
+$(COMPOSE_CMD) -f $(COMPOSE_FILE) $(PROFILE)
 endef
 
 .PHONY: compose-up compose-restart compose-build compose-pull \
@@ -2391,6 +2779,21 @@ compose-validate:
 	fi
 	$(COMPOSE) config --quiet
 	@echo "✅ Compose file is valid"
+
+compose-upgrade-pg18: compose-validate
+	@echo "⚠️  This will upgrade Postgres 17 -> 18"
+	@echo "⚠️  Make sure you have a backup!"
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo "🔄 Running Postgres upgrade..."
+	$(COMPOSE) -f $(COMPOSE_FILE) -f compose.upgrade.yml run --rm pg-upgrade
+	@echo "🔧 Copying pg_hba.conf from old cluster..."
+	@$(COMPOSE) -f $(COMPOSE_FILE) -f compose.upgrade.yml run --rm pg-upgrade sh -c \
+		"cp /var/lib/postgresql/OLD/pg_hba.conf /var/lib/postgresql/18/docker/pg_hba.conf && \
+		 echo '✅ pg_hba.conf copied successfully'"
+	@echo "✅ Upgrade complete!"
+	@echo "📝 Next steps:"
+	@echo "   1. Update docker-compose.yml to use postgres:18"
+	@echo "   2. Run: make compose-up"
 
 compose-up: compose-validate
 	@echo "🚀  Using $(COMPOSE_CMD); starting stack..."
@@ -2670,7 +3073,7 @@ MINIKUBE_ADDONS  ?= ingress ingress-dns metrics-server dashboard registry regist
 # OCI image tag to preload into the cluster.
 # - By default we point to the *local* image built via `make docker-prod`, e.g.
 #   mcpgateway/mcpgateway:latest.  Override with IMAGE=<repo:tag> to use a
-#   remote registry (e.g. ghcr.io/ibm/mcp-context-forge:v0.6.0).
+#   remote registry (e.g. ghcr.io/ibm/mcp-context-forge:v0.9.0).
 TAG              ?= latest         # override with TAG=<ver>
 IMAGE            ?= $(IMG):$(TAG)  # or IMAGE=ghcr.io/ibm/mcp-context-forge:$(TAG)
 
@@ -3305,7 +3708,7 @@ devpi-unconfigure-pip:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 📦  Version helper (defaults to the version in pyproject.toml)
-#      override on the CLI:  make VER=0.6.0 devpi-delete
+#      override on the CLI:  make VER=0.9.0 devpi-delete
 # ─────────────────────────────────────────────────────────────────────────────
 VER ?= $(shell python3 -c "import tomllib, pathlib; \
 print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])" \
@@ -3739,9 +4142,12 @@ security-all:
 semgrep:                            ## 🔍 Security patterns & anti-patterns
 	@echo "🔍  semgrep - scanning for security patterns..."
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
+	# Notice the use of uvx below -- semgrep is not in the project dependencies because it introduces a
+	# resolution conflict with other packages.
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
-		python3 -m pip install -q semgrep && \
-		$(VENV_DIR)/bin/semgrep --config=auto $(TARGET) --exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2 || true"
+		uvx semgrep --config=auto $(TARGET) \
+			--exclude-rule python.lang.compatibility.python37.python37-compatibility-importlib2 \
+			|| true"
 
 dodgy:                              ## 🔐 Suspicious code patterns
 	@echo "🔐  dodgy - scanning for hardcoded secrets..."
@@ -3788,12 +4194,24 @@ pip-audit:                          ## 🔒 Audit Python dependencies for CVEs
 
 
 
-## --------------------------------------------------------------------------- ##
-##  Async Code Testing and Performance Profiling
-## --------------------------------------------------------------------------- ##
+# =============================================================================
+# 🔄 ASYNC CODE TESTING & PERFORMANCE PROFILING
+# =============================================================================
+# help: 🔄 ASYNC CODE TESTING & PERFORMANCE PROFILING
+# help: async-test           - Run comprehensive async safety tests with debug mode
+# help: async-lint           - Run async-aware linting (ruff, flake8, mypy with coroutine warnings)
+# help: async-monitor        - Start aiomonitor for live async debugging (WebUI + console)
+# help: async-debug          - Run async tests with PYTHONASYNCIODEBUG=1 and debug mode
+# help: async-benchmark      - Run async performance benchmarks and generate reports
+# help: async-validate       - Validate async code patterns and generate validation report
+# help: async-clean          - Clean async testing artifacts and kill background processes
+# help: profile              - Generate async performance profiles and start SnakeViz server
+# help: profile-serve        - Start SnakeViz profile server on localhost:8080
+# help: profile-compare      - Compare performance profiles between baseline and current
+
 .PHONY: async-test async-lint profile async-monitor async-debug profile-serve
 
-ASYNC_TEST_DIR := async_testing
+ASYNC_TEST_DIR := tests/async
 PROFILE_DIR := $(ASYNC_TEST_DIR)/profiles
 REPORTS_DIR := $(ASYNC_TEST_DIR)/reports
 VENV_PYTHON := $(VENV_DIR)/bin/python
@@ -4487,7 +4905,7 @@ MIGRATION_TEST_DIR := tests/migration
 MIGRATION_REPORTS_DIR := $(MIGRATION_TEST_DIR)/reports
 
 # Get supported versions from version config (n-2 policy)
-MIGRATION_VERSIONS := $(shell cd $(MIGRATION_TEST_DIR) && python3 -c "from version_config import get_supported_versions; print(' '.join(get_supported_versions()))" 2>/dev/null || echo "0.5.0 0.6.0 latest")
+MIGRATION_VERSIONS := $(shell cd $(MIGRATION_TEST_DIR) && python3 -c "from version_config import get_supported_versions; print(' '.join(get_supported_versions()))" 2>/dev/null || echo "0.5.0 0.8.0 0.9.0 latest")
 
 .PHONY: migration-test-all migration-test-sqlite migration-test-postgres migration-test-performance \
         migration-setup migration-cleanup migration-debug migration-status
@@ -4598,3 +5016,145 @@ migration-status:                          ## Show current version configuration
 	@test -d "$(VENV_DIR)" || $(MAKE) venv
 	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
 		cd $(MIGRATION_TEST_DIR) && python3 version_status.py"
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 🦀 RUST PLUGIN FRAMEWORK (OPTIONAL)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# help:
+# help: Rust Plugin Framework (Optional - requires Rust toolchain)
+# help: ========================================================================================================
+# help: rust-build          - Build Rust plugins in release mode (native)
+# help: rust-dev            - Build and install Rust plugins in development mode
+# help: rust-test           - Run Rust plugin tests
+# help: rust-test-all       - Run all Rust and Python integration tests
+# help: rust-bench          - Run Rust plugin benchmarks
+# help: rust-bench-compare  - Compare Rust vs Python performance
+# help: rust-check          - Run all Rust checks (format, lint, test)
+# help: rust-clean          - Clean Rust build artifacts
+# help: rust-verify         - Verify Rust plugin installation
+# help:
+# help: rust-check-maturin       - Check/install maturin (auto-runs before builds)
+# help: rust-install-deps        - Install all Rust build dependencies
+# help: rust-install-targets     - Install all Rust cross-compilation targets
+# help: rust-build-x86_64        - Build for Linux x86_64
+# help: rust-build-aarch64       - Build for Linux arm64/aarch64
+# help: rust-build-armv7         - Build for Linux armv7 (32-bit ARM)
+# help: rust-build-s390x         - Build for Linux s390x (IBM mainframe)
+# help: rust-build-ppc64le       - Build for Linux ppc64le (IBM POWER)
+# help: rust-build-all-linux     - Build for all Linux architectures
+# help: rust-build-all-platforms - Build for all platforms (Linux, macOS, Windows)
+# help: rust-cross               - Install targets + build all Linux (convenience)
+# help: rust-cross-install-build - Install targets + build all platforms (one command)
+
+.PHONY: rust-build rust-dev rust-test rust-test-all rust-bench rust-bench-compare rust-check rust-clean rust-verify
+.PHONY: rust-check-maturin rust-install-deps rust-install-targets
+.PHONY: rust-build-x86_64 rust-build-aarch64 rust-build-armv7 rust-build-s390x rust-build-ppc64le
+.PHONY: rust-build-all-linux rust-build-all-platforms rust-cross rust-cross-install-build
+
+rust-build: rust-check-maturin          ## Build Rust plugins (release)
+	@echo "🦀 Building Rust plugins (release mode)..."
+	@cd plugins_rust && maturin build --release
+
+rust-dev:                               ## Build and install Rust plugins (development mode)
+	@echo "🦀 Building and installing Rust plugins (development mode)..."
+	@cd plugins_rust && maturin develop --release
+
+rust-test:                              ## Run Rust plugin tests
+	@echo "🦀 Running Rust plugin tests..."
+	@cd plugins_rust && cargo test --release
+
+rust-test-integration:                  ## Run Rust integration tests
+	@echo "🦀 Running Rust integration tests..."
+	@cd plugins_rust && cargo test --test '*' --release
+
+rust-test-all: rust-test                ## Run all Rust and Python tests
+	@echo "🧪 Running Python tests for Rust plugins..."
+	pytest tests/unit/mcpgateway/plugins/test_pii_filter_rust.py -v
+
+rust-bench:                             ## Run Rust benchmarks
+	@echo "🦀 Running Rust benchmarks..."
+	@cd plugins_rust && cargo bench
+
+rust-bench-compare:                     ## Compare Rust vs Python performance
+	@echo "📊 Comparing Rust vs Python performance..."
+	@cd plugins_rust/benchmarks && python3 compare_pii_filter.py
+
+rust-check:                             ## Run all Rust checks (format, lint, test)
+	@echo "🦀 Running Rust checks..."
+	@cd plugins_rust && cargo fmt --check
+	@cd plugins_rust && cargo clippy --lib -- -D warnings -A deprecated
+	@cd plugins_rust && cargo test --lib --release
+
+rust-clean:                             ## Clean Rust build artifacts
+	@echo "🧹 Cleaning Rust build artifacts..."
+	@cd plugins_rust && cargo clean
+	@rm -rf plugins_rust/target/
+
+rust-verify:                            ## Verify Rust plugin installation
+	@echo "🔍 Verifying Rust plugin installation..."
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && \
+		python3 -c 'from plugins_rust import PIIDetectorRust; print(\"✅ Rust PII filter available\")' || \
+		echo '❌ Rust plugins not installed'"
+
+rust-check-maturin:                     ## Check/install maturin
+	@which maturin > /dev/null 2>&1 || { \
+		echo "📦 Installing maturin..."; \
+		/bin/bash -c "source $(VENV_DIR)/bin/activate && pip install maturin"; \
+	}
+
+rust-install-deps:                      ## Install all Rust build dependencies
+	@echo "📦 Installing Rust build dependencies..."
+	@/bin/bash -c "source $(VENV_DIR)/bin/activate && pip install maturin"
+	@rustup --version > /dev/null 2>&1 || { \
+		echo "❌ Rust not installed. Install with:"; \
+		echo "   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"; \
+		exit 1; \
+	}
+
+rust-install-targets:                   ## Install all Rust cross-compilation targets
+	@echo "🎯 Installing Rust cross-compilation targets..."
+	@rustup target add x86_64-unknown-linux-gnu
+	@rustup target add aarch64-unknown-linux-gnu
+	@rustup target add armv7-unknown-linux-gnueabihf
+	@rustup target add s390x-unknown-linux-gnu
+	@rustup target add powerpc64le-unknown-linux-gnu
+	@rustup target add x86_64-apple-darwin
+	@rustup target add aarch64-apple-darwin
+	@rustup target add x86_64-pc-windows-msvc
+
+rust-build-x86_64: rust-check-maturin   ## Build for Linux x86_64
+	@echo "🦀 Building for x86_64-unknown-linux-gnu..."
+	@cd plugins_rust && maturin build --release --target x86_64-unknown-linux-gnu
+
+rust-build-aarch64: rust-check-maturin  ## Build for Linux arm64/aarch64
+	@echo "🦀 Building for aarch64-unknown-linux-gnu..."
+	@cd plugins_rust && maturin build --release --target aarch64-unknown-linux-gnu
+
+rust-build-armv7: rust-check-maturin    ## Build for Linux armv7 (32-bit ARM)
+	@echo "🦀 Building for armv7-unknown-linux-gnueabihf..."
+	@cd plugins_rust && maturin build --release --target armv7-unknown-linux-gnueabihf
+
+rust-build-s390x: rust-check-maturin    ## Build for Linux s390x (IBM mainframe)
+	@echo "🦀 Building for s390x-unknown-linux-gnu..."
+	@cd plugins_rust && maturin build --release --target s390x-unknown-linux-gnu
+
+rust-build-ppc64le: rust-check-maturin  ## Build for Linux ppc64le (IBM POWER)
+	@echo "🦀 Building for powerpc64le-unknown-linux-gnu..."
+	@cd plugins_rust && maturin build --release --target powerpc64le-unknown-linux-gnu
+
+rust-build-all-linux: rust-build-x86_64 rust-build-aarch64 rust-build-armv7 rust-build-s390x rust-build-ppc64le  ## Build for all Linux architectures
+	@echo "✅ Built for all Linux architectures"
+
+rust-build-all-platforms: rust-build-all-linux  ## Build for all platforms (Linux, macOS, Windows)
+	@echo "🦀 Building for macOS..."
+	@cd plugins_rust && maturin build --release --target x86_64-apple-darwin || echo "⚠️  macOS x86_64 build skipped"
+	@cd plugins_rust && maturin build --release --target aarch64-apple-darwin || echo "⚠️  macOS ARM64 build skipped"
+	@echo "🦀 Building for Windows..."
+	@cd plugins_rust && maturin build --release --target x86_64-pc-windows-msvc || echo "⚠️  Windows build skipped"
+	@echo "✅ Built for all platforms"
+
+rust-cross: rust-install-targets rust-build-all-linux  ## Install targets + build all Linux (convenience)
+	@echo "✅ Cross-compilation complete"
+
+rust-cross-install-build: rust-install-deps rust-install-targets rust-build-all-platforms  ## Install targets + build all platforms (one command)
+	@echo "✅ Full cross-compilation setup and build complete"

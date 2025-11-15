@@ -1,22 +1,25 @@
 # -*- coding: utf-8 -*-
+# Standard
 import asyncio
 import json
 import logging
-from typing import List, Dict, Any, Optional, AsyncGenerator
+from collections.abc import AsyncGenerator
 
+# Third-Party
 from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain.tools import Tool
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
-from langchain_core.language_models.chat_models import BaseChatModel
-from pydantic import BaseModel, Field
 
 # LLM Provider imports
-from langchain_openai import ChatOpenAI, AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from pydantic import Field
+
 try:
-    from langchain_community.chat_models import BedrockChat, ChatOllama
+    # Third-Party
     from langchain_anthropic import ChatAnthropic
+    from langchain_community.chat_models import BedrockChat, ChatOllama
 except ImportError:
     # Optional dependencies - will be checked at runtime
     BedrockChat = None
@@ -24,9 +27,11 @@ except ImportError:
     ChatAnthropic = None
 
 try:
+    # Local
     from .mcp_client import MCPClient, ToolDef
     from .models import AgentConfig
 except ImportError:
+    # Third-Party
     from mcp_client import MCPClient, ToolDef
     from models import AgentConfig
 
@@ -63,11 +68,7 @@ def create_llm(config: AgentConfig) -> BaseChatModel:
         if not config.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required for OpenAI provider")
 
-        openai_args = {
-            "model": config.default_model,
-            "api_key": config.openai_api_key,
-            **common_args
-        }
+        openai_args = {"model": config.default_model, "api_key": config.openai_api_key, **common_args}
 
         if config.openai_base_url:
             openai_args["base_url"] = config.openai_base_url
@@ -78,14 +79,16 @@ def create_llm(config: AgentConfig) -> BaseChatModel:
 
     elif provider == "azure":
         if not all([config.azure_openai_api_key, config.azure_openai_endpoint, config.azure_deployment_name]):
-            raise ValueError("Azure OpenAI requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_DEPLOYMENT_NAME")
+            raise ValueError(
+                "Azure OpenAI requires AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_DEPLOYMENT_NAME"
+            )
 
         return AzureChatOpenAI(
             api_key=config.azure_openai_api_key,
             azure_endpoint=config.azure_openai_endpoint,
             api_version=config.azure_openai_api_version,
             azure_deployment=config.azure_deployment_name,
-            **common_args
+            **common_args,
         )
 
     elif provider == "bedrock":
@@ -98,32 +101,28 @@ def create_llm(config: AgentConfig) -> BaseChatModel:
             model_id=config.bedrock_model_id,
             region_name=config.aws_region,
             credentials_profile_name=None,  # Use environment variables
-            **common_args
+            **common_args,
         )
 
     elif provider == "ollama":
         if ChatOllama is None:
-            raise ImportError("langchain-community is required for OLLAMA support. Install with: pip install langchain-community")
+            raise ImportError(
+                "langchain-community is required for OLLAMA support. Install with: pip install langchain-community"
+            )
         if not config.ollama_model:
             raise ValueError("OLLAMA_MODEL is required for OLLAMA provider")
 
-        return ChatOllama(
-            model=config.ollama_model,
-            base_url=config.ollama_base_url,
-            **common_args
-        )
+        return ChatOllama(model=config.ollama_model, base_url=config.ollama_base_url, **common_args)
 
     elif provider == "anthropic":
         if ChatAnthropic is None:
-            raise ImportError("langchain-anthropic is required for Anthropic support. Install with: pip install langchain-anthropic")
+            raise ImportError(
+                "langchain-anthropic is required for Anthropic support. Install with: pip install langchain-anthropic"
+            )
         if not config.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY is required for Anthropic provider")
 
-        return ChatAnthropic(
-            model=config.default_model,
-            api_key=config.anthropic_api_key,
-            **common_args
-        )
+        return ChatAnthropic(model=config.default_model, api_key=config.anthropic_api_key, **common_args)
 
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}. Supported: openai, azure, bedrock, ollama, anthropic")
@@ -155,6 +154,7 @@ class MCPTool(BaseTool):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._run, **kwargs)
 
+
 class LangchainMCPAgent:
     """Langchain agent that integrates with MCP Gateway"""
 
@@ -171,8 +171,8 @@ class LangchainMCPAgent:
             logger.error(f"Failed to initialize LLM provider {config.llm_provider}: {e}")
             raise
 
-        self.tools: List[MCPTool] = []
-        self.agent_executor: Optional[AgentExecutor] = None
+        self.tools: list[MCPTool] = []
+        self.agent_executor: AgentExecutor | None = None
         self._initialized = False
 
     @classmethod
@@ -218,7 +218,7 @@ class LangchainMCPAgent:
                     name=tool_id.replace(".", "-").replace("_", "-"),
                     description=f"Allowlisted tool: {tool_id}",
                     mcp_client=self.mcp_client,
-                    tool_id=tool_id
+                    tool_id=tool_id,
                 )
                 self.tools.append(mcp_tool)
                 logger.info(f"Added allowlisted tool: {tool_id}")
@@ -249,7 +249,7 @@ class LangchainMCPAgent:
                     name=tool_def.name or tool_def.id,
                     description=tool_def.description or f"MCP tool: {tool_def.id}",
                     mcp_client=self.mcp_client,
-                    tool_id=tool_def.id
+                    tool_id=tool_def.id,
                 )
                 self.tools.append(mcp_tool)
                 logger.info(f"Loaded tool: {tool_def.id} ({tool_def.name})")
@@ -275,19 +275,17 @@ Available tools: {tool_names}
 Always strive to be helpful, accurate, and honest in your responses."""
 
             # Create prompt template
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                MessagesPlaceholder(variable_name="chat_history"),
-                ("human", "{input}"),
-                MessagesPlaceholder(variable_name="agent_scratchpad"),
-            ])
+            prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", system_prompt),
+                    MessagesPlaceholder(variable_name="chat_history"),
+                    ("human", "{input}"),
+                    MessagesPlaceholder(variable_name="agent_scratchpad"),
+                ]
+            )
 
             # Create the agent
-            agent = create_openai_functions_agent(
-                llm=self.llm,
-                tools=self.tools,
-                prompt=prompt
-            )
+            agent = create_openai_functions_agent(llm=self.llm, tools=self.tools, prompt=prompt)
 
             # Create agent executor
             self.agent_executor = AgentExecutor(
@@ -295,7 +293,7 @@ Always strive to be helpful, accurate, and honest in your responses."""
                 tools=self.tools,
                 max_iterations=self.config.max_iterations,
                 verbose=self.config.debug_mode,
-                return_intermediate_steps=True
+                return_intermediate_steps=True,
             )
 
             logger.info("Langchain agent created successfully")
@@ -312,10 +310,10 @@ Always strive to be helpful, accurate, and honest in your responses."""
         """Check if agent is ready to handle requests"""
         try:
             return (
-                self._initialized and
-                self.agent_executor is not None and
-                len(self.tools) >= 0 and  # Allow 0 tools for testing
-                await self.test_gateway_connection()
+                self._initialized
+                and self.agent_executor is not None
+                and len(self.tools) >= 0  # Allow 0 tools for testing
+                and await self.test_gateway_connection()
             )
         except Exception:
             return False
@@ -330,7 +328,7 @@ Always strive to be helpful, accurate, and honest in your responses."""
             logger.error(f"Gateway connection test failed: {e}")
             return False
 
-    def get_available_tools(self) -> List[ToolDef]:
+    def get_available_tools(self) -> list[ToolDef]:
         """Get list of available tools"""
         try:
             return self.mcp_client.list_tools()
@@ -339,11 +337,11 @@ Always strive to be helpful, accurate, and honest in your responses."""
 
     async def run_async(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        tools_enabled: bool = True
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        tools_enabled: bool = True,
     ) -> str:
         """Run the agent asynchronously"""
         if not self._initialized:
@@ -368,11 +366,9 @@ Always strive to be helpful, accurate, and honest in your responses."""
                     chat_history.append(SystemMessage(content=msg["content"]))
 
             # Run the agent
-            result = await self.agent_executor.ainvoke({
-                "input": input_text,
-                "chat_history": chat_history,
-                "tool_names": [tool.name for tool in self.tools]
-            })
+            result = await self.agent_executor.ainvoke(
+                {"input": input_text, "chat_history": chat_history, "tool_names": [tool.name for tool in self.tools]}
+            )
 
             return result["output"]
 
@@ -382,13 +378,13 @@ Always strive to be helpful, accurate, and honest in your responses."""
 
     async def stream_async(
         self,
-        messages: List[Dict[str, str]],
-        model: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        tools_enabled: bool = True
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        tools_enabled: bool = True,
     ) -> AsyncGenerator[str, None]:
         """Stream agent response asynchronously"""
         if not self._initialized:
             raise RuntimeError("Agent not initialized. Call initialize() first.")
-        import asyncio
+        # Standard

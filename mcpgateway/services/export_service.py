@@ -18,7 +18,7 @@ It handles:
 # Standard
 from datetime import datetime, timezone
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, cast, Dict, List, Optional, TypedDict
 
 # Third-Party
 from sqlalchemy import select
@@ -39,11 +39,42 @@ logger = logging.getLogger(__name__)
 
 
 class ExportError(Exception):
-    """Base class for export-related errors."""
+    """Base class for export-related errors.
+
+    Examples:
+        >>> try:
+        ...     raise ExportError("General export error")
+        ... except ExportError as e:
+        ...     str(e)
+        'General export error'
+        >>> try:
+        ...     raise ExportError("Export failed")
+        ... except Exception as e:
+        ...     isinstance(e, ExportError)
+        True
+    """
 
 
 class ExportValidationError(ExportError):
-    """Raised when export data validation fails."""
+    """Raised when export data validation fails.
+
+    Examples:
+        >>> try:
+        ...     raise ExportValidationError("Invalid export format")
+        ... except ExportValidationError as e:
+        ...     str(e)
+        'Invalid export format'
+        >>> try:
+        ...     raise ExportValidationError("Schema validation failed")
+        ... except ExportError as e:
+        ...     isinstance(e, ExportError)  # Should inherit from ExportError
+        True
+        >>> try:
+        ...     raise ExportValidationError("Missing required field")
+        ... except Exception as e:
+        ...     isinstance(e, ExportValidationError)
+        True
+    """
 
 
 class ExportService:
@@ -58,6 +89,36 @@ class ExportService:
 
     The service only exports locally configured entities, excluding dynamic content
     from federated sources to ensure exports contain only configuration data.
+
+    Examples:
+        >>> service = ExportService()
+        >>> hasattr(service, 'gateway_service')
+        True
+        >>> hasattr(service, 'tool_service')
+        True
+        >>> hasattr(service, 'resource_service')
+        True
+        >>> # Test entity type validation
+        >>> valid_types = ["tools", "gateways", "servers", "prompts", "resources", "roots"]
+        >>> "tools" in valid_types
+        True
+        >>> "invalid_type" in valid_types
+        False
+        >>> # Test filtering logic
+        >>> include_types = ["tools", "servers"]
+        >>> exclude_types = ["gateways"]
+        >>> "tools" in include_types and "tools" not in exclude_types
+        True
+        >>> "gateways" in include_types and "gateways" not in exclude_types
+        False
+        >>> # Test tag filtering
+        >>> entity_tags = ["production", "api"]
+        >>> filter_tags = ["production"]
+        >>> any(tag in entity_tags for tag in filter_tags)
+        True
+        >>> filter_tags = ["development"]
+        >>> any(tag in entity_tags for tag in filter_tags)
+        False
     """
 
     def __init__(self):
@@ -86,6 +147,7 @@ class ExportService:
         include_inactive: bool = False,
         include_dependencies: bool = True,
         exported_by: str = "system",
+        root_path: str = "",
     ) -> Dict[str, Any]:
         """Export complete gateway configuration to a standardized format.
 
@@ -97,6 +159,7 @@ class ExportService:
             include_inactive: Whether to include inactive entities
             include_dependencies: Whether to include dependent entities automatically
             exported_by: Username of the person performing the export
+            root_path: Root path for constructing API endpoints
 
         Returns:
             Dict containing the complete export data in the specified schema format
@@ -118,19 +181,52 @@ class ExportService:
             if exclude_types:
                 entity_types = [t for t in entity_types if t.lower() not in [e.lower() for e in exclude_types]]
 
-            # Initialize export structure
-            export_data = {
+            class ExportOptions(TypedDict, total=False):
+                """Options that control export behavior (full export)."""
+
+                include_inactive: bool
+                include_dependencies: bool
+                selected_types: List[str]
+                filter_tags: List[str]
+
+            class ExportMetadata(TypedDict):
+                """Metadata for full export including counts, dependencies, and options."""
+
+                entity_counts: Dict[str, int]
+                dependencies: Dict[str, Any]
+                export_options: ExportOptions
+
+            class ExportData(TypedDict):
+                """Top-level full export payload shape."""
+
+                version: str
+                exported_at: str
+                exported_by: str
+                source_gateway: str
+                encryption_method: str
+                entities: Dict[str, List[Dict[str, Any]]]
+                metadata: ExportMetadata
+
+            entities: Dict[str, List[Dict[str, Any]]] = {}
+            metadata: ExportMetadata = {
+                "entity_counts": {},
+                "dependencies": {},
+                "export_options": {
+                    "include_inactive": include_inactive,
+                    "include_dependencies": include_dependencies,
+                    "selected_types": entity_types,
+                    "filter_tags": tags or [],
+                },
+            }
+
+            export_data: ExportData = {
                 "version": settings.protocol_version,
                 "exported_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "exported_by": exported_by,
                 "source_gateway": f"http://{settings.host}:{settings.port}",
                 "encryption_method": "AES-256-GCM",
-                "entities": {},
-                "metadata": {
-                    "entity_counts": {},
-                    "dependencies": {},
-                    "export_options": {"include_inactive": include_inactive, "include_dependencies": include_dependencies, "selected_types": entity_types, "filter_tags": tags or []},
-                },
+                "entities": entities,
+                "metadata": metadata,
             }
 
             # Export each entity type
@@ -141,7 +237,7 @@ class ExportService:
                 export_data["entities"]["gateways"] = await self._export_gateways(db, tags, include_inactive)
 
             if "servers" in entity_types:
-                export_data["entities"]["servers"] = await self._export_servers(db, tags, include_inactive)
+                export_data["entities"]["servers"] = await self._export_servers(db, tags, include_inactive, root_path)
 
             if "prompts" in entity_types:
                 export_data["entities"]["prompts"] = await self._export_prompts(db, tags, include_inactive)
@@ -157,14 +253,14 @@ class ExportService:
                 export_data["metadata"]["dependencies"] = await self._extract_dependencies(db, export_data["entities"])
 
             # Calculate entity counts
-            for entity_type, entities in export_data["entities"].items():
-                export_data["metadata"]["entity_counts"][entity_type] = len(entities)
+            for entity_type, entities_list in export_data["entities"].items():
+                export_data["metadata"]["entity_counts"][entity_type] = len(entities_list)
 
             # Validate export data
-            self._validate_export_data(export_data)
+            self._validate_export_data(cast(Dict[str, Any], export_data))
 
             logger.info(f"Export completed successfully with {sum(export_data['metadata']['entity_counts'].values())} total entities")
-            return export_data
+            return cast(Dict[str, Any], export_data)
 
         except Exception as e:
             logger.error(f"Export failed: {str(e)}")
@@ -181,7 +277,7 @@ class ExportService:
         Returns:
             List of exported tool dictionaries
         """
-        tools = await self.tool_service.list_tools(db, tags=tags, include_inactive=include_inactive)
+        tools, _ = await self.tool_service.list_tools(db, tags=tags, include_inactive=include_inactive)
         exported_tools = []
 
         for tool in tools:
@@ -198,6 +294,7 @@ class ExportService:
                 "description": tool.description,
                 "headers": tool.headers or {},
                 "input_schema": tool.input_schema or {"type": "object", "properties": {}},
+                "output_schema": tool.output_schema,
                 "annotations": tool.annotations or {},
                 "jsonpath_filter": tool.jsonpath_filter,
                 "tags": tool.tags or [],
@@ -278,13 +375,14 @@ class ExportService:
 
         return exported_gateways
 
-    async def _export_servers(self, db: Session, tags: Optional[List[str]], include_inactive: bool) -> List[Dict[str, Any]]:
+    async def _export_servers(self, db: Session, tags: Optional[List[str]], include_inactive: bool, root_path: str = "") -> List[Dict[str, Any]]:
         """Export virtual servers with their tool associations.
 
         Args:
             db: Database session
             tags: Filter by tags
             include_inactive: Include inactive servers
+            root_path: Root path for constructing API endpoints
 
         Returns:
             List of exported server dictionaries
@@ -297,9 +395,9 @@ class ExportService:
                 "name": server.name,
                 "description": server.description,
                 "tool_ids": list(server.associated_tools),
-                "sse_endpoint": f"/servers/{server.id}/sse",
-                "websocket_endpoint": f"/servers/{server.id}/ws",
-                "jsonrpc_endpoint": f"/servers/{server.id}/jsonrpc",
+                "sse_endpoint": f"{root_path}/servers/{server.id}/sse",
+                "websocket_endpoint": f"{root_path}/servers/{server.id}/ws",
+                "jsonrpc_endpoint": f"{root_path}/servers/{server.id}/jsonrpc",
                 "capabilities": {"tools": {"list_changed": True}, "prompts": {"list_changed": True}},
                 "is_active": server.is_active,
                 "tags": server.tags or [],
@@ -320,30 +418,30 @@ class ExportService:
         Returns:
             List of exported prompt dictionaries
         """
-        prompts = await self.prompt_service.list_prompts(db, tags=tags, include_inactive=include_inactive)
+        prompts, _ = await self.prompt_service.list_prompts(db, tags=tags, include_inactive=include_inactive)
         exported_prompts = []
 
         for prompt in prompts:
-            prompt_data = {
+            input_schema: Dict[str, Any] = {"type": "object", "properties": {}, "required": []}
+            prompt_data: Dict[str, Any] = {
                 "name": prompt.name,
                 "template": prompt.template,
                 "description": prompt.description,
-                "input_schema": {"type": "object", "properties": {}, "required": []},
+                "input_schema": input_schema,
                 "tags": prompt.tags or [],
                 "is_active": prompt.is_active,
             }
 
             # Convert arguments to input schema format
             if prompt.arguments:
-                properties = {}
+                properties: Dict[str, Any] = {}
                 required = []
                 for arg in prompt.arguments:
                     properties[arg.name] = {"type": "string", "description": arg.description or ""}
                     if arg.required:
                         required.append(arg.name)
-
-                prompt_data["input_schema"]["properties"] = properties
-                prompt_data["input_schema"]["required"] = required
+                input_schema["properties"] = properties
+                input_schema["required"] = required
 
             exported_prompts.append(prompt_data)
 
@@ -360,7 +458,7 @@ class ExportService:
         Returns:
             List of exported resource dictionaries
         """
-        resources = await self.resource_service.list_resources(db, tags=tags, include_inactive=include_inactive)
+        resources, _ = await self.resource_service.list_resources(db, tags=tags, include_inactive=include_inactive)
         exported_resources = []
 
         for resource in resources:
@@ -443,7 +541,7 @@ class ExportService:
 
         logger.debug("Export data validation passed")
 
-    async def export_selective(self, db: Session, entity_selections: Dict[str, List[str]], include_dependencies: bool = True, exported_by: str = "system") -> Dict[str, Any]:
+    async def export_selective(self, db: Session, entity_selections: Dict[str, List[str]], include_dependencies: bool = True, exported_by: str = "system", root_path: str = "") -> Dict[str, Any]:
         """Export specific entities by their IDs/names.
 
         Args:
@@ -451,6 +549,7 @@ class ExportService:
             entity_selections: Dict mapping entity types to lists of IDs/names to export
             include_dependencies: Whether to include dependent entities
             exported_by: Username of the person performing the export
+            root_path: Root path for constructing API endpoints
 
         Returns:
             Dict containing the selective export data
@@ -464,14 +563,45 @@ class ExportService:
         """
         logger.info(f"Starting selective export by {exported_by}")
 
-        export_data = {
+        class SelExportOptions(TypedDict, total=False):
+            """Options that control behavior for selective export."""
+
+            selective: bool
+            include_dependencies: bool
+            selections: Dict[str, List[str]]
+
+        class SelExportMetadata(TypedDict):
+            """Metadata for selective export including counts, dependencies, and options."""
+
+            entity_counts: Dict[str, int]
+            dependencies: Dict[str, Any]
+            export_options: SelExportOptions
+
+        class SelExportData(TypedDict):
+            """Top-level selective export payload shape."""
+
+            version: str
+            exported_at: str
+            exported_by: str
+            source_gateway: str
+            encryption_method: str
+            entities: Dict[str, List[Dict[str, Any]]]
+            metadata: SelExportMetadata
+
+        sel_entities: Dict[str, List[Dict[str, Any]]] = {}
+        sel_metadata: SelExportMetadata = {
+            "entity_counts": {},
+            "dependencies": {},
+            "export_options": {"selective": True, "include_dependencies": include_dependencies, "selections": entity_selections},
+        }
+        export_data: SelExportData = {
             "version": settings.protocol_version,
             "exported_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "exported_by": exported_by,
             "source_gateway": f"http://{settings.host}:{settings.port}",
             "encryption_method": "AES-256-GCM",
-            "entities": {},
-            "metadata": {"entity_counts": {}, "dependencies": {}, "export_options": {"selective": True, "include_dependencies": include_dependencies, "selections": entity_selections}},
+            "entities": sel_entities,
+            "metadata": sel_metadata,
         }
 
         # Export selected entities for each type
@@ -481,7 +611,7 @@ class ExportService:
             elif entity_type == "gateways":
                 export_data["entities"]["gateways"] = await self._export_selected_gateways(db, selected_ids)
             elif entity_type == "servers":
-                export_data["entities"]["servers"] = await self._export_selected_servers(db, selected_ids)
+                export_data["entities"]["servers"] = await self._export_selected_servers(db, selected_ids, root_path)
             elif entity_type == "prompts":
                 export_data["entities"]["prompts"] = await self._export_selected_prompts(db, selected_ids)
             elif entity_type == "resources":
@@ -494,13 +624,13 @@ class ExportService:
             export_data["metadata"]["dependencies"] = await self._extract_dependencies(db, export_data["entities"])
 
         # Calculate entity counts
-        for entity_type, entities in export_data["entities"].items():
-            export_data["metadata"]["entity_counts"][entity_type] = len(entities)
+        for entity_type, entities_list in export_data["entities"].items():
+            export_data["metadata"]["entity_counts"][entity_type] = len(entities_list)
 
-        self._validate_export_data(export_data)
+        self._validate_export_data(cast(Dict[str, Any], export_data))
 
         logger.info(f"Selective export completed with {sum(export_data['metadata']['entity_counts'].values())} entities")
-        return export_data
+        return cast(Dict[str, Any], export_data)
 
     async def _export_selected_tools(self, db: Session, tool_ids: List[str]) -> List[Dict[str, Any]]:
         """Export specific tools by their IDs.
@@ -543,12 +673,13 @@ class ExportService:
                 logger.warning(f"Could not export gateway {gateway_id}: {str(e)}")
         return gateways
 
-    async def _export_selected_servers(self, db: Session, server_ids: List[str]) -> List[Dict[str, Any]]:
+    async def _export_selected_servers(self, db: Session, server_ids: List[str], root_path: str = "") -> List[Dict[str, Any]]:
         """Export specific servers by their IDs.
 
         Args:
             db: Database session
             server_ids: List of server IDs to export
+            root_path: Root path for constructing API endpoints
 
         Returns:
             List of exported server dictionaries
@@ -557,7 +688,7 @@ class ExportService:
         for server_id in server_ids:
             try:
                 server = await self.server_service.get_server(db, server_id)
-                server_data = await self._export_servers(db, None, True)
+                server_data = await self._export_servers(db, None, True, root_path)
                 servers.extend([s for s in server_data if s["name"] == server.name])
             except Exception as e:
                 logger.warning(f"Could not export server {server_id}: {str(e)}")

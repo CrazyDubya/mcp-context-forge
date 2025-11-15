@@ -73,6 +73,16 @@ def sanitize_header_value(value: str, max_length: int = MAX_HEADER_VALUE_LENGTH)
 
     Returns:
         Sanitized header value
+
+    Examples:
+        Remove CRLF and trim length:
+        >>> s = sanitize_header_value('val' + chr(13) + chr(10) + 'more', max_length=6)
+        >>> s
+        'valmor'
+        >>> len(s) <= 6
+        True
+        >>> sanitize_header_value('  spaced  ')
+        'spaced'
     """
     # Remove newlines and carriage returns to prevent header injection
     value = value.replace("\r", "").replace("\n", "")
@@ -94,6 +104,19 @@ def validate_header_name(name: str) -> bool:
 
     Returns:
         True if valid, False otherwise
+
+    Examples:
+        Valid names:
+        >>> validate_header_name('X-Tenant-Id')
+        True
+        >>> validate_header_name('X123-ABC')
+        True
+
+        Invalid names:
+        >>> validate_header_name('Invalid Header:Name')
+        False
+        >>> validate_header_name('Bad@Name')
+        False
     """
     return bool(HEADER_NAME_REGEX.match(name))
 
@@ -118,6 +141,8 @@ def get_passthrough_headers(request_headers: Dict[str, str], base_headers: Dict[
     - Header value sanitization (removes dangerous characters, enforces limits)
     - Logs all conflicts and skipped headers for debugging
     - Uses case-insensitive header matching for robustness
+    - Special X-Upstream-Authorization handling: When gateway uses auth, clients can
+      send X-Upstream-Authorization header which gets renamed to Authorization for upstream
 
     Args:
         request_headers (Dict[str, str]): Headers from the incoming HTTP request.
@@ -154,6 +179,24 @@ def get_passthrough_headers(request_headers: Dict[str, str], base_headers: Dict[
         ...     get_passthrough_headers(request_headers, base_headers, mock_db)
         {'Content-Type': 'application/json'}
 
+        Enabled with allowlist and conflicts:
+        >>> with patch(__name__ + ".settings") as mock_settings:
+        ...     mock_settings.enable_header_passthrough = True
+        ...     mock_settings.default_passthrough_headers = ["X-Tenant-Id", "Authorization"]
+        ...     # Mock DB returns no global override
+        ...     mock_db = Mock()
+        ...     mock_db.query.return_value.first.return_value = None
+        ...     # Gateway with basic auth should block Authorization passthrough
+        ...     gateway = Mock()
+        ...     gateway.passthrough_headers = None
+        ...     gateway.auth_type = "basic"
+        ...     gateway.name = "gw1"
+        ...     req_headers = {"X-Tenant-Id": "acme", "Authorization": "Bearer abc"}
+        ...     base = {"Content-Type": "application/json", "Authorization": "Bearer base"}
+        ...     res = get_passthrough_headers(req_headers, base, mock_db, gateway)
+        ...     ("X-Tenant-Id" in res) and (res["Authorization"] == "Bearer base")
+        True
+
         See comprehensive unit tests in tests/unit/mcpgateway/utils/test_passthrough_headers*.py
         for detailed examples of enabled functionality, conflict detection, and security features.
 
@@ -164,10 +207,41 @@ def get_passthrough_headers(request_headers: Dict[str, str], base_headers: Dict[
     """
     passthrough_headers = base_headers.copy()
 
-    # Early return if feature is disabled
+    # Special handling for X-Upstream-Authorization header (always enabled)
+    # If gateway uses auth and client wants to pass Authorization to upstream,
+    # client can use X-Upstream-Authorization which gets renamed to Authorization
+    request_headers_lower = {k.lower(): v for k, v in request_headers.items()} if request_headers else {}
+    upstream_auth = request_headers_lower.get("x-upstream-authorization")
+
+    if upstream_auth:
+        try:
+            sanitized_value = sanitize_header_value(upstream_auth)
+            if sanitized_value:
+                # Always rename X-Upstream-Authorization to Authorization for upstream
+                # This works for both auth and no-auth gateways
+                passthrough_headers["Authorization"] = sanitized_value
+                logger.debug("Renamed X-Upstream-Authorization to Authorization for upstream passthrough")
+        except Exception as e:
+            logger.warning(f"Failed to sanitize X-Upstream-Authorization header: {e}")
+    elif gateway and gateway.auth_type == "none":
+        # When gateway has no auth, pass through client's Authorization if present
+        client_auth = request_headers_lower.get("authorization")
+        if client_auth and "authorization" not in [h.lower() for h in base_headers.keys()]:
+            try:
+                sanitized_value = sanitize_header_value(client_auth)
+                if sanitized_value:
+                    passthrough_headers["Authorization"] = sanitized_value
+                    logger.debug("Passing through client Authorization header (auth_type=none)")
+            except Exception as e:
+                logger.warning(f"Failed to sanitize Authorization header: {e}")
+
+    # Early return if header passthrough feature is disabled
     if not settings.enable_header_passthrough:
         logger.debug("Header passthrough is disabled via ENABLE_HEADER_PASSTHROUGH flag")
         return passthrough_headers
+
+    if settings.enable_overwrite_base_headers:
+        logger.debug("Overwriting base headers is enabled via ENABLE_OVERWRITE_BASE_HEADERS flag")
 
     # Get global passthrough headers first
     global_config = db.query(GlobalConfig).first()
@@ -207,7 +281,7 @@ def get_passthrough_headers(request_headers: Dict[str, str], base_headers: Dict[
                     continue
 
                 # Skip if header would conflict with existing auth headers
-                if header_lower in base_headers_keys:
+                if header_lower in base_headers_keys and not settings.enable_overwrite_base_headers:
                     logger.warning(f"Skipping {header_name} header passthrough as it conflicts with pre-defined headers")
                     continue
 
@@ -276,7 +350,7 @@ async def set_global_passthrough_headers(db: Session) -> None:
         Config already exists (no DB write):
         >>> import pytest
         >>> from unittest.mock import Mock, patch
-        >>> from mcpgateway.models import GlobalConfig
+        >>> from mcpgateway.common.models import GlobalConfig
         >>> @pytest.mark.asyncio
         ... @patch("mcpgateway.utils.passthrough_headers.settings")
         ... async def test_existing_config(mock_settings):

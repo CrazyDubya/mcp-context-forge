@@ -7,22 +7,23 @@
 
     ```bash
     # Using pipx - pip install pipx
-    pipx run mcp-contextforge-gateway
+    pipx run --spec mcp-contextforge-gateway mcpgateway --host 0.0.0.0 --port 4444
 
-    # Or uvx - pip install uv (default: admin/changeme)
-    uvx mcp-contextforge-gateway --port 4444
+    # Or uvx - pip install uv (default login: admin@example.com/changeme)
+    uvx --from mcp-contextforge-gateway mcpgateway --host 0.0.0.0 --port 4444
     ```
 
     OCI image (Docker/Podman) - shares host network so localhost works:
 
     ```bash
-    podman run --network=host -p 4444:4444 ghcr.io/ibm/mcp-context-forge:0.6.0
+    podman run --network=host -p 4444:4444 ghcr.io/ibm/mcp-context-forge:0.9.0
     ```
 
 ???+ example "🗂️ What URLs are available for the admin interface and API docs?"
-    - Admin UI → <https://localhost:4444>
-    - Swagger → <https://localhost:4444/docs>
-    - ReDoc → <https://localhost:4444/redoc>
+
+    - Admin UI → <http://localhost:4444/admin>
+    - Swagger → <http://localhost:4444/docs>
+    - ReDoc → <http://localhost:4444/redoc>
 
 ---
 
@@ -32,6 +33,7 @@
     MCP is an open-source protocol released by Anthropic in Nov 2024 that lets language models invoke external tools via a typed JSON-RPC envelope. Community folks call it "USB-C for AI"-one connector for many models.
 
 ???+ info "🌍 Who supports MCP and what's the ecosystem like?"
+
     - Supported by GitHub & Microsoft Copilot, AWS Bedrock, Google Cloud Vertex AI, IBM watsonx, AgentBee, LangChain, CrewAI and 15,000+ community servers.
     - Contracts enforced via JSON Schema.
     - Multiple transports (STDIO, SSE, HTTP) - still converging.
@@ -64,6 +66,7 @@
     ```
 
 ???+ example "🪛 What are some advanced environment variables I can configure?"
+
     - Basic: `HOST`, `PORT`, `APP_ROOT_PATH`
     - Auth: `AUTH_REQUIRED`, `BASIC_AUTH_*`, `JWT_SECRET_KEY`
     - Logging: `LOG_LEVEL`, `LOG_FORMAT`, `LOG_TO_FILE`, `LOG_FILE`, `LOG_FOLDER`, `LOG_ROTATION_ENABLED`, `LOG_MAX_SIZE_MB`, `LOG_BACKUP_COUNT`
@@ -99,16 +102,17 @@
 ## 💾 Databases & Persistence
 
 ???+ info "🗄️ What databases are supported for persistence?"
+
     - SQLite (default) - used for development / small deployments.
-    - PostgreSQL / MySQL / MariaDB via `DATABASE_URL`
-    - Redis (optional) for high performance session management. Sessions can also be stored in the DB or memory.
+    - PostgreSQL / MySQL / MariaDB via `DATABASE_URL`.
+    - Redis (optional) for caching and federation.
     - Other databases supported by SQLAlchemy.
 
 ???+ info "📦 How do I persist SQLite across container restarts?"
     Include a persistent volume with your container or Kubernetes deployment. Ex:
 
     ```bash
-    docker run -v $(pwd)/data:/app ghcr.io/ibm/mcp-context-forge:0.6.0
+    docker run -v $(pwd)/data:/app ghcr.io/ibm/mcp-context-forge:0.9.0
     ```
 
     For production use, we recommend PostgreSQL. A Docker Compose target with PostgreSQL and Redis is provided.
@@ -122,8 +126,9 @@
 
 ???+ example "🔑 How do I generate and use a JWT token?"
     ```bash
-    export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token -u admin -exp 0 --secret my-test-key)
-    curl -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" https://localhost:4444/tools
+    export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token \
+        --username admin@example.com --exp 10080 --secret my-test-key)
+    curl -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" http://localhost:4444/tools
     ```
 
     The token is used for all API interactions and can be configured to expire using `-exp`.
@@ -141,8 +146,28 @@
     See the [Bulk Import guide](../manage/bulk-import.md) for details on format and error handling.
 
 ???+ example "🛡️ How do I enable TLS and configure CORS?"
+
     - Use `make podman-run-ssl` for self-signed certs or drop your own certificate under `certs`.
     - Set `ALLOWED_ORIGINS` or `CORS_ENABLED` for CORS headers.
+
+???+ example "🔐 How do I pass Authorization headers to upstream MCP servers when the gateway uses authentication?"
+    When MCP Gateway uses authentication (JWT/Bearer/Basic/OAuth), there's a conflict if you need to pass different Authorization headers to upstream MCP servers.
+
+    **Solution: Use X-Upstream-Authorization header**
+
+    ```bash
+    # Send X-Upstream-Authorization header - gateway automatically renames it to Authorization for upstream
+    curl -H "Authorization: Bearer $GATEWAY_TOKEN" \
+         -H "X-Upstream-Authorization: Bearer $UPSTREAM_TOKEN" \
+         -X POST http://localhost:4444/tools/invoke/my_tool \
+         -d '{"arguments": {}}'
+    ```
+
+    The gateway will:
+
+    1. Use the `Authorization` header for gateway authentication
+    2. Rename `X-Upstream-Authorization` to `Authorization` when forwarding to the upstream MCP server
+    3. This solves the header conflict and allows different auth tokens for gateway vs upstream
 
 ---
 
@@ -173,28 +198,38 @@
 ## 🏎️ Performance Tuning & Scaling
 
 ???+ example "⚙️ What environment variables affect performance?"
+
     - `TOOL_CONCURRENT_LIMIT`
     - `TOOL_RATE_LIMIT`
     - `WEBSOCKET_PING_INTERVAL`
     - `SSE_RETRY_TIMEOUT`
 
 ???+ example "🧵 How do I scale the number of worker processes?"
-    - `GUNICORN_WORKERS` (for Gunicorn)
-    - `UVICORN_WORKERS` (for Uvicorn)
+
+    - Run `mcpgateway --workers 4` (Uvicorn CLI flag)
+    - Set `GUNICORN_WORKERS` when using the bundled Gunicorn scripts
 
 ???+ example "📊 How can I benchmark performance?"
-    Use `ab` or `wrk` against `/health` to measure raw latency.
-    Check out the detail performance testing harness under `tests/hey`.
+    Use `hey` against `/rpc` with sample payloads from `tests/hey`.
+    Focus on p99 latency, error rate, and throughput.
 
 ---
 
 ## 📈 Observability & Logging
 
-???+ example "🔍 What metrics are available?"
-    - Prometheus-style `/metrics` endpoint
-    - Tool/server/prompt stats via Admin UI
+???+ example "🔍 How do I enable tracing and observability?"
+    Use OpenTelemetry (OTLP) to export traces to Phoenix, Jaeger, Zipkin, Tempo, DataDog, etc.
+
+    ```bash
+    export OTEL_ENABLE_OBSERVABILITY=true
+    export OTEL_TRACES_EXPORTER=otlp
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+    ```
+
+    See the Observability docs for backend-specific setup. Admin UI also shows tool/server/prompt stats. A Prometheus `/metrics` endpoint may be added later.
 
 ???+ example "📜 What log formats are supported?"
+
     - `LOG_FORMAT=json` or `text`
     - Adjust with `LOG_LEVEL`
 
@@ -203,7 +238,7 @@
 ## 🧪 Smoke Tests & Troubleshooting
 
 ???+ example "🛫 Is there a full test script I can run?"
-    Yes - see `docs/basic.md`.
+    Yes - see the basic testing guide: [Testing › Basic](../testing/basic.md).
 
 ???+ example "🚨 What common errors should I watch for?"
     | Symptom               | Resolution                             |
@@ -219,9 +254,20 @@
 
 ???+ example "🦜 How do I use MCP Gateway with LangChain?"
     ```python
-    from langchain.tools import MCPTool
-    tool = MCPTool(endpoint="https://localhost:4444/json-rpc",
-                   token=os.environ["MCPGATEWAY_BEARER_TOKEN"])
+    import os
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+    from langgraph.prebuilt import create_react_agent
+
+    client = MultiServerMCPClient(
+        {
+            "gateway": {
+                "url": "http://localhost:4444/mcp",
+                "transport": "streamable_http",
+                "headers": {"Authorization": f"Bearer {os.environ['MCPGATEWAY_BEARER_TOKEN']}"}
+            }
+        }
+    )
+    agent = create_react_agent(tools=client.get_tools(), llm=your_language_model)
     ```
 
 ???+ example "🦾 How do I connect GitHub's mcp-server-git via Translate Bridge?"
@@ -231,9 +277,82 @@
 
 ---
 
+## 👥 Multi‑Tenancy & Migration (v0.7.0)
+
+???+ example "🔐 How do I enable email/password login and teams?"
+    Add the following to your `.env`:
+
+    ```bash
+    EMAIL_AUTH_ENABLED=true
+    PLATFORM_ADMIN_EMAIL=admin@example.com
+    PLATFORM_ADMIN_PASSWORD=changeme
+    AUTO_CREATE_PERSONAL_TEAMS=true
+    ```
+
+    Upgrading from earlier releases? Follow [MIGRATION-0.7.0.md](https://github.com/IBM/mcp-context-forge/blob/main/MIGRATION-0.7.0.md).
+
+???+ info "🔁 Does basic auth still work?"
+    Yes. Email auth is recommended for multi‑tenancy; basic auth remains available. Use `AUTH_REQUIRED` to enforce authentication.
+
+???+ info "🧩 How do teams and visibility work?"
+    Users belong to teams. Resources (servers, tools, prompts, resources) can be `private`, `team`, or `public`. Assign via API or Admin UI. Use SSO mappings to auto‑assign teams.
+
+---
+
+## 🔐 SSO & Team Mapping
+
+???+ example "👥 Can I auto‑assign users to teams via SSO?"
+    Yes. Add **Team Mapping** rules to each SSO provider (Admin UI → Manage → SSO → Provider → Team Mapping). Example JSON:
+
+    ```json
+    {
+      "team_mapping": {
+        "your-org": {
+          "team_id": "team-uuid",
+          "role": "member"
+        }
+      }
+    }
+    ```
+
+    You can manage the same payload via the Admin API (`/auth/sso/admin/providers/{id}`) — see the SSO guides under Manage › SSO.
+
+---
+
+## 🖧 Stdio Wrapper
+
+???+ example "🧰 How do I use the stdio wrapper with Claude Desktop?"
+    Configure a stdio server in your client:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcpgateway-wrapper": {
+          "command": "python3",
+          "args": ["-m", "mcpgateway.wrapper"],
+          "env": {
+            "MCP_AUTH": "Bearer <your-token>",
+            "MCP_SERVER_URL": "http://localhost:4444/servers/UUID_OF_SERVER_1/mcp",
+            "MCP_TOOL_CALL_TIMEOUT": "120"
+          }
+        }
+      }
+    }
+    ```
+
+    See: [mcpgateway.wrapper](../using/mcpgateway-wrapper.md).
+
+---
+
+## 🧾 Protocol Version
+
+???+ info "📜 Which MCP protocol version is supported?"
+    You can choose the MCP protocol version (e.g., `2025-03-26`) when integrating. See README "Gateway Layer with Protocol Flexibility".
+
 ## 🗺️ Roadmap
 
 ???+ info "🧭 What features are planned for future versions?"
+
     - 🔐 OAuth2 client-credentials upstream auth with full spec compliance
     - [🌙 Dark-mode UI](https://github.com/IBM/mcp-context-forge/issues/26)
     - [🧾 Add "Version and Environment Info" tab to Admin UI](https://github.com/IBM/mcp-context-forge/issues/25)
@@ -266,6 +385,7 @@
     Use [GitHub Issues](https://github.com/IBM/mcp-context-forge/issues) and [CONTRIBUTING.md](https://github.com/IBM/mcp-context-forge/blob/main/CONTRIBUTING.md).
 
 ???+ tip "🧑🎓 What code style and CI tools are used?"
+
     - Pre-commit: `ruff`, `black`, `mypy`, `isort`
     - Run `make lint` before PRs
 

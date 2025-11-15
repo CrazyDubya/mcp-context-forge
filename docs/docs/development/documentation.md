@@ -47,7 +47,7 @@ repo-root/
 ## ✏️ Editing tips
 
 1. Write in **standard Markdown**; we also support admonitions, call-outs, and Mermaid diagrams.
-2. Use relative links between pages: `[Gateway API](../api/index.md)`.
+2. Use relative links between pages: `[Configuration](../manage/configuration.md)`.
 3. For local images place them under `docs/docs/images/` and reference with `![](../images/example.png)`.
 4. Never edit `mkdocs.yml` - all nav structure is defined in `.pages` files (one per directory).
 
@@ -85,6 +85,7 @@ Example - *docs for the **development** section:*
 # title: Development Guide
 
 nav:
+
   - index.md        # ➟ /development/ (landing page)
   - github.md       # contribution workflow
   - building.md     # local build guide
@@ -145,9 +146,9 @@ The `build` target produces a fully-static site (used by CI for docs previews an
 
 ## 📤 Publishing (CI)
 
-Docs are tested, but not deployed automatically by GitHub Actions on every push to `main`. The workflow runs `cd docs && make build`.
+We do not currently run a dedicated docs-build workflow in CI. Build locally with `make build` (or the `make doctest`/`make lint` suite from the repo root) before opening a PR that touches docs-heavy changes.
 
-Publishing is done manually by repo maintainers with `make deploy` which publishes the generated site to **GitHub Pages**.
+Publishing to GitHub Pages remains a manual maintainer task via `make deploy`.
 
 ---
 

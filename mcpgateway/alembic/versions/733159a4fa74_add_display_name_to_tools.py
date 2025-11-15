@@ -1,10 +1,14 @@
 # -*- coding: utf-8 -*-
-"""add_display_name_to_tools
+"""Location: ./mcpgateway/alembic/versions/733159a4fa74_add_display_name_to_tools.py
+Copyright 2025
+SPDX-License-Identifier: Apache-2.0
+Authors: Mihai Criveti
+
+add_display_name_to_tools
 
 Revision ID: 733159a4fa74
 Revises: 1fc1795f6983
 Create Date: 2025-08-23 13:01:28.785095
-
 """
 
 # Standard
@@ -57,7 +61,7 @@ def upgrade() -> None:
     tools_columns = [col["name"] for col in inspector.get_columns("tools")]
     if "display_name" not in tools_columns:
         # Add the column first
-        op.add_column("tools", sa.Column("display_name", sa.String(), nullable=True))
+        op.add_column("tools", sa.Column("display_name", sa.String(255), nullable=True))
         print("Added display_name column to tools table.")
 
         # Populate smart displayName for existing tools that don't have one

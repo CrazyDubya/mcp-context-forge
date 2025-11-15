@@ -125,6 +125,7 @@ class TestPassthroughHeaders:
     def test_base_header_conflict_prevention(self, mock_settings, caplog):
         """Test that request headers don't override base headers."""
         mock_settings.enable_header_passthrough = True
+        mock_settings.enable_overwrite_base_headers = False
 
         mock_db = Mock()
         mock_global_config = Mock(spec=GlobalConfig)
@@ -156,7 +157,7 @@ class TestPassthroughHeaders:
 
         # Request headers are expected to be normalized to lowercase
         request_headers = {"x-tenant-id": "mixed-case-value", "authorization": "bearer lowercase-header"}  # Lowercase key
-        base_headers = {}
+        base_headers: dict[str, str] = {}
 
         result = get_passthrough_headers(request_headers, base_headers, mock_db)
 
@@ -185,7 +186,7 @@ class TestPassthroughHeaders:
         assert result == expected
 
         # Check debug message for missing header
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.DEBUG, logger="mcpgateway.utils.passthrough_headers"):
             # Re-run to capture debug messages
             result = get_passthrough_headers(request_headers, base_headers, mock_db)
 
@@ -254,7 +255,7 @@ class TestPassthroughHeaders:
         mock_global_config.passthrough_headers = ["X-Tenant-Id"]
         mock_db.query.return_value.first.return_value = mock_global_config
 
-        request_headers = {}
+        request_headers: dict[str, str] = {}
         base_headers = {"Content-Type": "application/json"}
 
         result = get_passthrough_headers(request_headers, base_headers, mock_db)
@@ -262,6 +263,31 @@ class TestPassthroughHeaders:
         # Only base headers should remain
         expected = {"Content-Type": "application/json"}
         assert result == expected
+
+    @patch("mcpgateway.utils.passthrough_headers.settings")
+    def test_no_auth_gateway_passes_authorization_when_feature_disabled(self, mock_settings):
+        """When gateway.auth_type == 'none', the client's Authorization header
+        should be passed through even if ENABLE_HEADER_PASSTHROUGH is False.
+        This behavior is handled before the main allowlist processing.
+        """
+        # Feature disabled globally
+        mock_settings.enable_header_passthrough = False
+
+        mock_db = Mock()
+        # No global config needed for this early path
+        mock_db.query.return_value.first.return_value = None
+
+        request_headers = {"authorization": "Bearer client-token"}
+        base_headers: dict[str, str] = {}
+
+        mock_gateway = Mock(spec=DbGateway)
+        mock_gateway.passthrough_headers = None
+        mock_gateway.auth_type = "none"
+
+        result = get_passthrough_headers(request_headers, base_headers, mock_db, mock_gateway)
+
+        # Authorization should be present because gateway is configured with auth_type 'none'
+        assert result.get("Authorization") == "Bearer client-token"
 
     def test_none_request_headers(self):
         """Test behavior with None request headers."""
@@ -273,7 +299,7 @@ class TestPassthroughHeaders:
         request_headers = None
         base_headers = {"Content-Type": "application/json"}
 
-        result = get_passthrough_headers(request_headers, base_headers, mock_db)
+        result = get_passthrough_headers(request_headers, base_headers, mock_db) # type: ignore[arg-type]
 
         # Only base headers should remain
         expected = {"Content-Type": "application/json"}
@@ -313,10 +339,12 @@ class TestPassthroughHeaders:
         mock_db.query.return_value.first.return_value = mock_global_config
 
         request_headers = {"authorization": "Bearer token"}
-        base_headers = {}
+        base_headers: dict[str, str] = {}
 
-        # Test with different auth types
-        auth_types = ["basic", "bearer", "api-key", None]
+        # Test with different auth types. Include the string "none" which should
+        # allow passthrough of the client's Authorization header (special-case handled
+        # before the main passthrough allowlist logic).
+        auth_types = ["basic", "bearer", "api-key", None, "none"]
 
         for auth_type in auth_types:
             caplog.clear()
@@ -385,6 +413,7 @@ class TestPassthroughHeaders:
     def test_logging_levels(self, mock_settings, caplog):
         """Test that appropriate log levels are used for different scenarios."""
         mock_settings.enable_header_passthrough = True
+        mock_settings.enable_overwrite_base_headers = False
 
         mock_db = Mock()
         mock_global_config = Mock(spec=GlobalConfig)
@@ -408,3 +437,49 @@ class TestPassthroughHeaders:
         assert len(warning_messages) == 2  # Only auth conflict and base header conflict
         assert any("due to basic auth" in msg for msg in warning_messages)
         assert any("conflicts with pre-defined headers" in msg for msg in warning_messages)
+
+    @patch("mcpgateway.utils.passthrough_headers.settings")
+    def test_enable_overwrite_base_headers(self, mock_settings):
+        """Test that enable_overwrite_base_headers allows overriding base headers."""
+        mock_settings.enable_header_passthrough = True
+        mock_settings.enable_overwrite_base_headers = True  # Enable override
+        mock_settings.default_passthrough_headers = ["Content-Type", "X-Tenant-Id"]
+
+        mock_db = Mock()
+        mock_db.query.return_value.first.return_value = None
+
+        request_headers = {"content-type": "text/plain", "x-tenant-id": "acme-corp"}
+        base_headers = {"Content-Type": "application/json", "User-Agent": "MCPGateway"}
+
+        with patch("mcpgateway.utils.passthrough_headers.logger") as mock_logger:
+            result = get_passthrough_headers(request_headers, base_headers, mock_db)
+
+        # Should override Content-Type and add X-Tenant-Id
+        expected = {"Content-Type": "text/plain", "User-Agent": "MCPGateway", "X-Tenant-Id": "acme-corp"}
+        assert result == expected
+
+        # Should log debug message about override being enabled
+        mock_logger.debug.assert_any_call("Overwriting base headers is enabled via ENABLE_OVERWRITE_BASE_HEADERS flag")
+
+    @patch("mcpgateway.utils.passthrough_headers.settings")
+    def test_disable_overwrite_base_headers_prevents_conflicts(self, mock_settings, caplog):
+        """Test that when overwrite is disabled, base header conflicts are prevented."""
+        mock_settings.enable_header_passthrough = True
+        mock_settings.enable_overwrite_base_headers = False  # Disable override (default)
+        mock_settings.default_passthrough_headers = ["Content-Type", "X-Tenant-Id"]
+
+        mock_db = Mock()
+        mock_db.query.return_value.first.return_value = None
+
+        request_headers = {"content-type": "text/plain", "x-tenant-id": "acme-corp"}
+        base_headers = {"Content-Type": "application/json", "User-Agent": "MCPGateway"}
+
+        with caplog.at_level(logging.WARNING):
+            result = get_passthrough_headers(request_headers, base_headers, mock_db)
+
+        # Should preserve base Content-Type and add X-Tenant-Id
+        expected = {"Content-Type": "application/json", "User-Agent": "MCPGateway", "X-Tenant-Id": "acme-corp"}
+        assert result == expected
+
+        # Should log warning about conflict
+        assert any("conflicts with pre-defined headers" in record.message for record in caplog.records)

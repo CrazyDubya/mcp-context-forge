@@ -1,6 +1,11 @@
 nav:
   - index.md
+  - configuration.md
+  - api-usage.md
+  - scale.md
+  - tuning.md
   - backup.md
+  - catalog.md
   - bulk-import.md
   - metadata-tracking.md
   - export-import.md
@@ -11,9 +16,19 @@ nav:
   - observability.md
   - observability
   - proxy.md
+  - dcr.md
   - oauth.md
   - securing.md
-  - tuning.md
+  - sso.md
+  - sso-github-tutorial.md
+  - sso-google-tutorial.md
+  - sso-ibm-tutorial.md
+  - sso-microsoft-entra-id-tutorial.md
+  - sso-keycloak-tutorial.md
+  - sso-okta-tutorial.md
+  - sso-generic-oidc-tutorial.md
+  - rbac.md
+  - teams.md
   - ui-customization.md
   - upgrade.md
   - well-known-uris.md

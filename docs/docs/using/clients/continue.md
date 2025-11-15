@@ -57,7 +57,7 @@ There are **two ways** to attach Continue to a gateway:
 *Generate a token*:
 
 ```bash
-export MCP_AUTH=$(python3 -m mcpgateway.utils.create_jwt_token -u admin --secret my-test-key)
+export MCP_AUTH=$(python3 -m mcpgateway.utils.create_jwt_token -u admin@example.com --secret my-test-key)
 ```
 
 ### Option B - Local stdio bridge (`mcpgateway.wrapper`)
@@ -80,7 +80,7 @@ pipx install --include-deps mcp-contextforge-gateway
         "args": ["-m", "mcpgateway.wrapper"],
         "env": {
           "MCP_SERVER_URL": "http://localhost:4444/servers/UUID_OF_SERVER_1",
-          "MCP_AUTH": "${env:MCP_AUTH}",
+          "MCP_AUTH": "Bearer ${env:MCP_AUTH}",
           "MCP_TOOL_CALL_TIMEOUT": "120"
         }
       }
@@ -115,6 +115,7 @@ Once VS Code restarts:
 
 * **SSE vs stdio** - SSE is simpler in prod, stdio is great for offline or
   header-free environments.
+
 * **Multiple servers** - add more blocks under `"servers"` if you run staging vs prod.
 * **Custom instructions** - Continue's *Custom Instructions* pane lets you steer tool use.
 
