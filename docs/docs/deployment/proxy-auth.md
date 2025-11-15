@@ -43,6 +43,92 @@ AUTH_REQUIRED=true
 
 ## Common Proxy Configurations
 
+### HyprMCP Gateway
+
+Find the completed guide on how to use the [HyprMCP Gateway](https://github.com/hyprmcp/mcp-gateway) to support DCR and OAuth2 here:
+[Tutorial: Dynamic Client Registration with HyprMCP](../tutorials/dcr-hyprmcp.md)
+
+
+```yaml
+# docker-compose.yaml
+services:
+    hyprmcp-dex:
+        image: ghcr.io/dexidp/dex:v2.43.1-alpine
+        command: ["dex", "serve", "/config.yaml"]
+        ports:
+
+            - 5556:5556
+            - 5557:5557
+        healthcheck:
+            test: wget http://localhost:5556/.well-known/openid-configuration -O -
+            interval: 5s
+            start_period: 10s
+            start_interval: 1s
+        volumes:
+
+            - type: bind
+              source: config/hyprmcp-dex.yaml
+              target: /config.yaml
+              read_only: true
+
+            - type: bind
+              source: ./data
+              target: /data
+        #env_file:
+        #  - config/.dex.secret.env
+
+    hyprmcp-gateway:
+        image: ghcr.io/hyprmcp/mcp-gateway:0.2.6
+        command: ["serve", "--config", "/opt/config.yaml"]
+        ports:
+
+            - 9000:9000
+        volumes:
+
+            - type: bind
+              source: config/hyprmcp-gateway.yaml
+              target: /opt/config.yaml
+              read_only: true
+        depends_on:
+            hyprmcp-dex:
+                condition: service_healthy
+                required: true
+        network_mode: host
+
+    context-forge:
+        image: ghcr.io/ibm/mcp-context-forge:0.9.0
+        ports:
+
+            - 4444:4444
+        volumes:
+
+            - type: bind
+              source: ./data
+              target: /data
+
+            - ./config/public.pem:/opt/public.pem:ro
+            - ./config/private.pem:/opt/private.pem:ro
+        env_file:
+
+            - config/context-forge.env
+        environment:
+            JWT_ALGORITHM: RS256
+            JWT_PUBLIC_KEY_PATH: /opt/public.pem
+            JWT_PRIVATE_KEY_PATH: /opt/private.pem
+            JWT_AUDIENCE_VERIFICATION: false
+            JWT_ISSUER: http://localhost:5556
+            DATABASE_URL: sqlite:////data/context-forge.db
+            HOST: 0.0.0.0
+            PORT: "4444"
+            MCPGATEWAY_UI_ENABLED: true
+            MCPGATEWAY_ADMIN_API_ENABLED: true
+            BASIC_AUTH_USER: admin
+            BASIC_AUTH_PASSWORD: changeme
+            AUTH_REQUIRED: false
+            MCP_CLIENT_AUTH_ENABLED: false
+            TRUST_PROXY_AUTH: true
+```
+
 ### OAuth2 Proxy
 
 OAuth2 Proxy is a popular reverse proxy that provides authentication using OAuth2 providers.
@@ -53,6 +139,7 @@ services:
   oauth2-proxy:
     image: quay.io/oauth2-proxy/oauth2-proxy:latest
     ports:
+
       - "4180:4180"
     environment:
       OAUTH2_PROXY_CLIENT_ID: your-client-id
@@ -80,6 +167,7 @@ services:
   authelia:
     image: authelia/authelia
     volumes:
+
       - ./authelia:/config
     environment:
       TZ: America/New_York
@@ -91,6 +179,7 @@ services:
       TRUST_PROXY_AUTH: true
       PROXY_USER_HEADER: Remote-User
     labels:
+
       - "traefik.http.routers.mcp.middlewares=authelia@docker"
 ```
 
@@ -136,6 +225,9 @@ When using proxy authentication, you may want to pass additional headers to down
 # Enable header passthrough
 ENABLE_HEADER_PASSTHROUGH=true
 
+# Optional: Enable overwriting of base headers (advanced usage)
+ENABLE_OVERWRITE_BASE_HEADERS=false
+
 # Headers to pass through (JSON array)
 DEFAULT_PASSTHROUGH_HEADERS='["X-Tenant-Id", "X-Request-Id", "X-Authenticated-User"]'
 ```
@@ -154,6 +246,7 @@ spec:
     matchLabels:
       app: mcp-gateway
   jwtRules:
+
   - issuer: "https://your-issuer.com"
     jwksUri: "https://your-issuer.com/.well-known/jwks.json"
 ---
@@ -209,6 +302,7 @@ WARNING - MCP client authentication is disabled but trust_proxy_auth is not set
 **Problem**: Getting 401 errors even with proxy headers.
 
 **Check**:
+
 1. Verify `MCP_CLIENT_AUTH_ENABLED=false`
 2. Ensure `TRUST_PROXY_AUTH=true`
 3. Confirm header name matches `PROXY_USER_HEADER`
@@ -254,11 +348,14 @@ services:
   traefik:
     image: traefik:v2.10
     command:
+
       - "--providers.docker=true"
       - "--entrypoints.web.address=:80"
     ports:
+
       - "80:80"
     volumes:
+
       - /var/run/docker.sock:/var/run/docker.sock
 
   oauth2-proxy:
@@ -274,6 +371,7 @@ services:
       OAUTH2_PROXY_PASS_USER_HEADERS: "true"
       OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
     labels:
+
       - "traefik.enable=true"
       - "traefik.http.routers.oauth2-proxy.rule=Host(`mcp.example.com`)"
       - "traefik.http.services.oauth2-proxy.loadbalancer.server.port=4180"
@@ -288,6 +386,7 @@ services:
       BASIC_AUTH_USER: ${ADMIN_USER}
       BASIC_AUTH_PASSWORD: ${ADMIN_PASSWORD}
     volumes:
+
       - ./data:/data
 ```
 

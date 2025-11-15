@@ -1,11 +1,11 @@
 # Plugin Framework
 
 !!! success "Production Ready"
-    The plugin framework is **production ready** with comprehensive hook coverage, robust error handling, and battle-tested implementations. Supports both self-contained and external service plugins.
+    The plugin framework is **production ready** with comprehensive hook coverage, robust error handling, and battle-tested implementations. Supports both native and external service plugins.
 
 ## Overview
 
-The MCP Context Forge Plugin Framework provides a comprehensive, production-grade system for extending gateway functionality through pre/post processing hooks at various points in the MCP request lifecycle. The framework supports both high-performance self-contained plugins and sophisticated external AI service integrations.
+The MCP Context Forge Plugin Framework provides a comprehensive, production-grade system for extending gateway functionality through pre/post processing hooks at various points in the MCP request lifecycle. The framework supports both high-performance native plugins and sophisticated external AI service integrations.
 
 ### Key Capabilities
 
@@ -13,42 +13,12 @@ The MCP Context Forge Plugin Framework provides a comprehensive, production-grad
 - **Content Security** - PII detection and masking, input validation, output sanitization
 - **Policy Enforcement** - Business rules, compliance checking, audit trails
 - **Performance Protection** - Timeout handling, resource limits, graceful degradation
-- **Operational Excellence** - Hot configuration reload, health monitoring, detailed metrics
+- **Operational Excellence** - Health‑oriented design, clear errors, sensible defaults
 - **Enterprise Features** - Multi-tenant isolation, conditional execution, sophisticated context management
-
-## Architecture
-
-The plugin framework implements a **hybrid architecture** supporting both self-contained and external service integrations:
-
-### Self-Contained Plugins
-- **In-Process Execution:** Written in Python, run directly within the gateway process
-- **High Performance:** Sub-millisecond latency, no network overhead
-- **Direct Access:** Full access to gateway internals and context
-- **Use Cases:** PII filtering, regex transformations, input validation, simple business rules
-- **Examples:** `PIIFilterPlugin`, `SearchReplacePlugin`, `DenyListPlugin`
-
-### External Service Plugins
-- **Microservice Integration:** Call external AI safety services via HTTP/gRPC/MCP
-- **Enterprise AI Support:** LlamaGuard, OpenAI Moderation, custom ML models
-- **Authentication Support:** Bearer tokens, API keys, mutual TLS, custom headers
-- **Scalable Architecture:** Services can be deployed independently, auto-scaled
-- **Use Cases:** Advanced AI safety, complex ML inference, enterprise policy engines
-- **Examples:** LlamaGuard integration, OpenAI Moderation, HashiCorp Vault, OPA
-
-### Unified Plugin Interface
-
-Both plugin types implement the same interface, enabling seamless switching between deployment models:
-
-```python
-class Plugin:
-    async def prompt_pre_fetch(self, payload, context) -> PluginResult
-    async def tool_pre_invoke(self, payload, context) -> PluginResult
-    # ... unified interface for all hook points
-```
 
 ## Enabling Plugins
 
-### 1. Environment Configuration
+### Environment Configuration
 
 Enable the plugin framework in your `.env` file:
 
@@ -60,36 +30,214 @@ PLUGINS_ENABLED=true
 PLUGIN_CONFIG_FILE=plugins/config.yaml
 ```
 
-### 2. Plugin Configuration
+If deploying the gateway as a container, set these environment variables in your compose file or in the container's `run` command.
 
-The plugin configuration file is used to configure a set of plugins to run a
-set of hook points throughout the MCP Context Forge.  An example configuration
-is below.  It contains two main sections: `plugins` and `plugin_settings`.
+## Architecture
 
-Create or modify `plugins/config.yaml`:
+!!! details "Plugin Framework Specification"
+    Check the [specification](https://ibm.github.io/mcp-context-forge/architecture/plugins/) docs for a detailed design of the plugin system.
+
+The plugin framework implements a **hybrid architecture** supporting both native and external service integrations:
+
+### Native Plugins
+- **In-Process Execution:** Written in Python, run directly within the gateway process
+- **High Performance:** Sub-millisecond latency, no network overhead
+- **Direct Access:** Full access to gateway internals and context
+- **Use Cases:** PII filtering, regex transformations, input validation, simple business rules
+- **Examples:** `PIIFilterPlugin`, `SearchReplacePlugin`, `DenyListPlugin`
+
+### External Service Plugins
+- **MCP Integration:** External plugins communicate via MCP using STDIO or Streamable HTTP
+- **Enterprise AI Support:** LlamaGuard, OpenAI Moderation, custom ML models
+- **Independent Scaling:** Services run outside the gateway and can scale separately
+- **Use Cases:** Advanced AI safety, complex ML inference, policy engines (e.g., OPA)
+- **Examples:** OPA external plugin server, LlamaGuard integration, OpenAI Moderation
+
+### Unified Plugin Interface
+
+Both plugin types implement the same interface, enabling seamless switching between deployment models:
+
+```python
+class Plugin:
+    async def prompt_pre_fetch(self, payload: PromptPrehookPayload,
+                              context: PluginContext) -> PromptPrehookResult: ...
+    async def prompt_post_fetch(self, payload: PromptPosthookPayload,
+                               context: PluginContext) -> PromptPosthookResult: ...
+    async def tool_pre_invoke(self, payload: ToolPreInvokePayload,
+                             context: PluginContext) -> ToolPreInvokeResult: ...
+    async def tool_post_invoke(self, payload: ToolPostInvokePayload,
+                              context: PluginContext) -> ToolPostInvokeResult: ...
+    async def resource_pre_fetch(self, payload: ResourcePreFetchPayload,
+                                context: PluginContext) -> ResourcePreFetchResult: ...
+    async def resource_post_fetch(self, payload: ResourcePostFetchPayload,
+                                 context: PluginContext) -> ResourcePostFetchResult: ...
+    # ... additional hook methods
+```
+
+## Build Your First Plugin (Quickstart)
+
+Decide between a native (in‑process) or external (MCP) plugin:
+
+- Native: simplest path; write Python class extending `Plugin`, configure via `plugins/config.yaml` using fully‑qualified class path.
+- External: runs as a separate MCP server (STDIO or Streamable HTTP); great for independent scaling and isolation.
+
+!!! details "Plugins CLI"
+    To bootstrap a plugin quickly (native or external), run `mcpplugins bootstrap` and follow the prompts.
+
+**Quick native skeleton:**
+
+```python
+from mcpgateway.plugins.framework import Plugin, PluginConfig, PluginContext, PromptPrehookPayload, PromptPrehookResult
+
+class MyPlugin(Plugin):
+    def __init__(self, config: PluginConfig):
+        super().__init__(config)
+
+    async def prompt_pre_fetch(self, payload: PromptPrehookPayload, context: PluginContext) -> PromptPrehookResult:
+        # modify
+        return PromptPrehookResult(modified_payload=payload)
+
+        # or block
+        # return PromptPrehookResult(
+        #     continue_processing=False,
+        #     violation=PluginViolation(
+        #         reason=f"Blocked by {self.name}",
+        #         description="...",
+        #         code="...",
+        #         details="..."
+        #     )
+        # )
+```
+
+Register it in `plugins/config.yaml`:
 
 ```yaml
-# Main plugin configuration
 plugins:
-  - name: "ContentFilter"
-    kind: "plugins.native.content_filter.ContentFilterPlugin"
-    description: "Filters inappropriate content"
-    version: "1.0"
-    author: "Your Team"
-    hooks: ["prompt_pre_fetch", "prompt_post_fetch"]
-    tags: ["security", "filter"]
-    mode: "enforce"  # enforce | permissive | disabled
-    priority: 100    # Lower number = higher priority
-    conditions:
-      - prompts: ["customer_chat", "support_bot"]
-        server_ids: []  # Apply to all servers
-        tenant_ids: []  # Apply to all tenants
-    config:
-      # Plugin-specific configuration
-      block_patterns: ["ssn", "credit_card"]
-      mask_char: "*"
+
+  - name: "MyPlugin"
+    kind: "plugins.my_plugin.plugin.MyPlugin"
+    hooks: ["prompt_pre_fetch"]
+    mode: "permissive"
+    priority: 120
+```
+
+**External plugin quickstart:**
+
+!!! details "Plugins Lifecycle Guide"
+    See the [plugin lifecycle guide](https://ibm.github.io/mcp-context-forge/using/plugins/lifecycle/) for building, testing, and serving extenal plugins.
+
+```yaml
+plugins:
+
+  - name: "MyExternal"
+    kind: "external"
+    priority: 10
+    mcp:
+      proto: STREAMABLEHTTP
+      url: http://localhost:8000/mcp
+```
+
+### Plugin Configuration
+
+The plugin configuration file is used to configure a set of plugins that implement hook functions used to register to hook points throughout the MCP Context Forge. An example configuration
+is below. It contains two main sections: `plugins` and `plugin_settings`.
+
+!!! details "Plugin Configuration"
+    Check [here](https://ibm.github.io/mcp-context-forge/architecture/plugins/#plugin-types-and-configuration) for detailed explanations of configuration options and fields.
+
+```yaml
+# plugins/config.yaml
+plugins:
+
+  - name: "PIIFilterPlugin"                    # Unique plugin identifier
+    kind: "plugins.pii_filter.pii_filter.PIIFilterPlugin"  # Plugin class path
+    description: "Detects and masks PII"       # Human-readable description
+    version: "1.0.0"                          # Plugin version
+    author: "Security Team"                   # Plugin author
+    hooks:                                    # Hook registration
+
+      - "prompt_pre_fetch"
+      - "tool_pre_invoke"
+      - "tool_post_invoke"
+    tags:                                     # Searchable tags
+
+      - "security"
+      - "pii"
+      - "compliance"
+    mode: "enforce"                           # enforce|enforce_ignore_error|permissive|disabled
+    priority: 50                              # Execution priority (lower = higher)
+    conditions:                               # Conditional execution
+
+      - server_ids: ["prod-server"]
+        tenant_ids: ["enterprise"]
+        tools: ["sensitive-tool"]
+    config:                                   # Plugin-specific configuration
+      detect_ssn: true
+      detect_credit_card: true
+      mask_strategy: "partial"
+      redaction_text: "[REDACTED]"
 
 # Global plugin settings
+plugin_settings:
+  parallel_execution_within_band: false      # Execute same-priority plugins in parallel
+  plugin_timeout: 30                         # Per-plugin timeout (seconds)
+  fail_on_plugin_error: false                # Continue on plugin failures
+  plugin_health_check_interval: 60           # Health check interval (seconds)
+```
+
+## Getting Started (Native Plugins)
+
+Use the native plugins out of the box:
+
+1. Copy and adapt the example config (enable any subset):
+
+```yaml
+# plugins/config.yaml
+plugins:
+
+  - name: "PIIFilterPlugin"
+    kind: "plugins.pii_filter.pii_filter.PIIFilterPlugin"
+    hooks: ["prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke"]
+    mode: "permissive"
+    priority: 50
+    config:
+      detect_ssn: true
+      detect_email: true
+      detect_credit_card: true
+      default_mask_strategy: "partial"
+
+  - name: "ReplaceBadWordsPlugin"
+    kind: "plugins.regex_filter.search_replace.SearchReplacePlugin"
+    hooks: ["prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke"]
+    mode: "enforce"
+    priority: 150
+    config:
+      words:
+
+        - { search: "crap", replace: "crud" }
+        - { search: "crud", replace: "yikes" }
+
+  - name: "DenyListPlugin"
+    kind: "plugins.deny_filter.deny.DenyListPlugin"
+    hooks: ["prompt_pre_fetch"]
+    mode: "enforce"
+    priority: 100
+    config:
+      words: ["innovative", "groundbreaking", "revolutionary"]
+
+  - name: "ResourceFilterExample"
+    kind: "plugins.resource_filter.resource_filter.ResourceFilterPlugin"
+    hooks: ["resource_pre_fetch", "resource_post_fetch"]
+    mode: "enforce"
+    priority: 75
+    config:
+      max_content_size: 1048576
+      allowed_protocols: ["http", "https"]
+      blocked_domains: ["malicious.example.com"]
+      content_filters:
+
+        - { pattern: "password\\s*[:=]\\s*\\S+", replacement: "password: [REDACTED]" }
+
 plugin_settings:
   parallel_execution_within_band: false
   plugin_timeout: 30
@@ -98,52 +246,116 @@ plugin_settings:
   plugin_health_check_interval: 60
 ```
 
+2. Ensure `.env` contains: `PLUGINS_ENABLED=true` and `PLUGIN_CONFIG_FILE=plugins/config.yaml`.
+
+3. Start the gateway: `make dev` (or `make serve`).
+
+That's it — the gateway now runs the enabled plugins at the selected hook points.
+
+### Plugin Configuration
+
 The `plugins` section lists the set of configured plugins that will be loaded
 by the Context Forge at startup.  Each plugin contains a set of standard configurations,
 and then a `config` section designed for plugin specific configurations. The attributes
 are defined as follows:
 
-| Attribute | Description | Example Value |
-|-----------|-------------|---------------|
-| **name**  | A unique name for the plugin. | MyFirstPlugin |
-| **kind**  | A fully qualified string representing the plugin python object. | plugins.native.content_filter.ContentFilterPlugin |
-| **description** | The description of the plugin configuration. | A plugin for replacing bad words. |
-| **version** | The version of the plugin configuration. | 0.1 |
-| **author** | The team that wrote the plugin. | MCP Context Forge |
-| **hooks** | A list of hooks for which the plugin will be executed. Supported hooks: "prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke", "resource_pre_fetch", "resource_post_fetch"  | ["prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke", "resource_pre_fetch", "resource_post_fetch"] |
-| **tags** | Descriptive keywords that make the configuration searchable. | ["security", "filter"] |
-| **mode** | Mode of operation of the plugin. - enforce (stops during a violation), permissive (audits a violation but doesn't stop), disabled (disabled) | permissive |
-| **priority** | The priority in which the plugin will run - 0 is higher priority | 100 |
-| **conditions** | A list of conditions under which a plugin is run. See section on conditions.|  |
-| **config** | Plugin specific configuration.  This is a dictionary and is passed to the plugin on initialization. |   |
+| Field | Type | Required | Default | Description | Example Values |
+|-------|------|----------|---------|-------------|----------------|
+| `name` | `string` | Yes | - | Unique plugin identifier within the configuration | `"PIIFilterPlugin"`, `"OpenAIModeration"` |
+| `kind` | `string` | Yes | - | Plugin class path for native plugins or `"external"` for MCP servers | `"plugins.pii_filter.pii_filter.PIIFilterPlugin"`, `"external"` |
+| `description` | `string` |  | `null` | Human-readable description of plugin functionality | `"Detects and masks PII in requests"` |
+| `author` | `string` |  | `null` | Plugin author or team responsible for maintenance | `"Security Team"`, `"AI Safety Group"` |
+| `version` | `string` |  | `null` | Plugin version for tracking and compatibility | `"1.0.0"`, `"2.3.1-beta"` |
+| `hooks` | `string[]` |  | `[]` | List of hook points where plugin executes | `["prompt_pre_fetch", "tool_pre_invoke"]` |
+| `tags` | `string[]` |  | `[]` | Searchable tags for plugin categorization | `["security", "pii", "compliance"]` |
+| `mode` | `string` |  | `"enforce"` | Plugin execution mode controlling behavior on violations | `"enforce"`, `"enforce_ignore_error"`, `"permissive"`, `"disabled"` |
+| `priority` | `integer` |  | `null` | Execution priority (lower number = higher priority) | `10`, `50`, `100` |
+| `conditions` | `object[]` |  | `[]` | Conditional execution rules for targeting specific contexts | See [Condition Fields](#condition-fields) below |
+| `config` | `object` |  | `{}` | Plugin-specific configuration parameters | `{"detect_ssn": true, "mask_strategy": "partial"}` |
+| `mcp` | `object` |  | `null` | External MCP server configuration (required for external plugins) | See [MCP Configuration](#mcp-configuration-fields) below |
+
+#### Hook Types
+
+Available hook values for the `hooks` field:
+
+**MCP Protocol Hooks:**
+
+| Hook Value | Description | Timing |
+|------------|-------------|--------|
+| `"prompt_pre_fetch"` | Process prompt requests before template processing | Before prompt template retrieval |
+| `"prompt_post_fetch"` | Process prompt responses after template rendering | After prompt template processing |
+| `"tool_pre_invoke"` | Process tool calls before execution | Before tool invocation |
+| `"tool_post_invoke"` | Process tool results after execution | After tool completion |
+| `"resource_pre_fetch"` | Process resource requests before fetching | Before resource retrieval |
+| `"resource_post_fetch"` | Process resource content after loading | After resource content loading |
+
+**HTTP Authentication & Middleware Hooks:**
+
+| Hook Value | Description | Timing |
+|------------|-------------|--------|
+| `"http_pre_request"` | Transform HTTP headers before processing | Before authentication |
+| `"http_auth_resolve_user"` | Implement custom authentication | During user authentication |
+| `"http_auth_check_permission"` | Custom permission checking logic | Before RBAC checks |
+| `"http_post_request"` | Process responses and add audit headers | After request completion |
+
+See the [HTTP Authentication Hooks Guide](./http-auth-hooks.md) for detailed implementation examples.
+
+#### Condition Fields
+
+Users may only want plugins to be invoked on specific servers, tools, and prompts. To address this, a set of conditionals can be applied to a plugin. The attributes in a conditional combine together in as a set of `and` operations, while each attribute list item is `or`ed with other items in the list.
+
+The `conditions` array contains objects that specify when plugins should execute:
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `server_ids` | `string[]` | Execute only for specific virtual server IDs | `["prod-server", "api-gateway"]` |
+| `tenant_ids` | `string[]` | Execute only for specific tenant/organization IDs | `["enterprise", "premium-tier"]` |
+| `tools` | `string[]` | Execute only for specific tool names | `["file_reader", "web_scraper"]` |
+| `prompts` | `string[]` | Execute only for specific prompt names | `["user_prompt", "system_message"]` |
+| `resources` | `string[]` | Execute only for specific resource URI patterns | `["https://api.example.com/*"]` |
+| `user_patterns` | `string[]` | Execute for users matching regex patterns | `["admin_.*", ".*@company.com"]` |
+| `content_types` | `string[]` | Execute for specific content types | `["application/json", "text/plain"]` |
+
+#### MCP Configuration Fields
+
+For external plugins (`kind: "external"`), the `mcp` object configures the MCP server connection:
+
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `proto` | `string` | Yes | MCP transport protocol | `"stdio"`, `"sse"`, `"streamablehttp"`, `"websocket"` |
+| `url` | `string` |  | Service URL for HTTP-based transports | `"http://openai-plugin:3000/mcp"` |
+| `script` | `string` |  | Script path for STDIO transport | `"/opt/plugins/custom-filter.py"` |
+
+#### Global Plugin Settings
 
 The `plugin_settings` are as follows:
 
-| Attribute | Description | Example Value |
-|-----------|-------------|---------------|
-| **parallel_execution_within_band** | Plugins in the same band are run in parallel (currently not implemented). | true or false |
-| **plugin_timeout** | The time in seconds before stopping plugin execution (not implemented). | 30 |
-| **fail_on_plugin_error** | Cause the execution of the task to fail if the plugin errors. | true or false |
-| **plugin_health_check_interval** | Health check interval in seconds (not implemented). | 60 |
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `parallel_execution_within_band` | `boolean` | `false` | Execute plugins with same priority in parallel |
+| `plugin_timeout` | `integer` | `30` | Per-plugin timeout in seconds |
+| `fail_on_plugin_error` | `boolean` | `false` | Stop processing on plugin errors |
+| `plugin_health_check_interval` | `integer` | `60` | Health check interval in seconds |
 
+#### Execution Modes
 
-### 3. Execution Modes
+Each plugin can operate in one of four modes:
 
-Each plugin can operate in one of three modes:
+| Mode | Behavior | Use Case |
+|------|----------|----------|
+| `"enforce"` | Block requests when plugin detects violations or errors | Production security plugins, critical compliance checks |
+| `"enforce_ignore_error"` | Block on violations but continue on plugin errors | Security plugins that should block violations but not break on technical errors |
+| `"permissive"` | Log violations and errors but allow requests to continue | Development environments, monitoring-only plugins |
+| `"disabled"` | Plugin is loaded but never executed | Temporary plugin deactivation, maintenance mode |
 
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **enforce** | Blocks requests on policy violations | Production guardrails |
-| **permissive** | Logs violations but allows requests | Testing and monitoring |
-| **disabled** | Plugin loaded but not executed | Temporary deactivation |
-
-### 4. Priority and Execution Order
+#### Priority and Execution Order
 
 Plugins execute in priority order (ascending):
 
 ```yaml
 # Execution order example
 plugins:
+
   - name: "Authentication"
     priority: 10      # Runs first
 
@@ -159,19 +371,6 @@ plugins:
 
 Plugins with the same priority may execute in parallel if `parallel_execution_within_band` is enabled.
 
-### 5. Conditions of Execution
-
-Users may only want plugins to be invoked on specific servers, tools, and prompts. To address this, a set of conditionals can be applied to a plugin. The attributes in a conditional combine together in as a set of `and` operations, while each attribute list item is `ored` with other items in the list.  The attributes are defined as follows:
-
-| Attribute | Description
-|-----------|------------|
-| **server_ids** | The list of MCP servers on which the plugin will trigger |
-| **tools** | The list of tools on which the plugin will be applied. |
-| **prompts** | The list of prompts on which the plugin will be applied. |
-| **resources** | The list of resource URIs on which the plugin will be applied. |
-| **user_patterns** | The list of users on which the plugin will be applied. |
-| **content_types** | The list of content types on which the plugin will trigger. |
-
 ## Available Hooks
 
 The plugin framework provides comprehensive hook coverage across the entire MCP request lifecycle:
@@ -186,17 +385,73 @@ The plugin framework provides comprehensive hook coverage across the entire MCP 
 | `tool_post_invoke` | After tool execution | Result filtering, PII masking, audit logging, response transformation | `ToolPostInvokePayload` |
 | `resource_pre_fetch` | Before resource fetching | URI validation, protocol checking, metadata injection | `ResourcePreFetchPayload` |
 | `resource_post_fetch` | After resource content retrieval | Content filtering, size validation, sensitive data redaction | `ResourcePostFetchPayload` |
+| `http_pre_request` | Before HTTP request processing | Header transformation (e.g., custom token to Bearer) | `HttpPreRequestPayload` |
+| `http_auth_resolve_user` | During user authentication | Custom authentication systems (LDAP, mTLS, token-based) | `HttpAuthResolveUserPayload` |
+| `http_auth_check_permission` | Before RBAC permission checks | Custom permission logic (token-based access, time-based rules) | `HttpAuthCheckPermissionPayload` |
+| `http_post_request` | After HTTP request completion | Audit logging, response header injection | `HttpPostRequestPayload` |
+| `agent_pre_invoke` | Before agent invocation | Message filtering, access control, tool restrictions | `AgentPreInvokePayload` |
+| `agent_post_invoke` | After agent response | Response filtering, content moderation, audit logging | `AgentPostInvokePayload` |
+
+!!! note "HTTP Authentication & Middleware Hooks"
+    For detailed information on implementing custom authentication and authorization, see the [HTTP Authentication Hooks Guide](./http-auth-hooks.md).
+
+!!! note "Agent-to-Agent (A2A) Hooks"
+    Agent hooks enable filtering and monitoring of Agent-to-Agent interactions. These hooks allow you to:
+    - Filter/transform messages before they reach agents
+    - Control which tools are available to agents
+    - Override model or system prompt settings
+    - Filter agent responses for safety/compliance
+    - Monitor tool invocations made by agents
+
+    See [A2A Documentation](../agents/a2a.md) for more information on Agent-to-Agent features.
 
 ### Planned Hooks (Roadmap)
 
 | Hook | Purpose | Expected Release |
 |------|---------|-----------------|
-| `server_pre_register` | Server attestation and validation before admission | v0.7.0 |
-| `server_post_register` | Post-registration processing and setup | v0.7.0 |
-| `auth_pre_check` | Custom authentication logic integration | v0.7.0 |
-| `auth_post_check` | Post-authentication processing and enrichment | v0.7.0 |
-| `federation_pre_sync` | Gateway federation validation and filtering | v0.8.0 |
-| `federation_post_sync` | Post-federation data processing and reconciliation | v0.8.0 |
+| `server_pre_register` | Server attestation and validation before admission | v0.9.0 |
+| `server_post_register` | Post-registration processing and setup | v0.9.0 |
+| `federation_pre_sync` | Gateway federation validation and filtering | v0.10.0 |
+| `federation_post_sync` | Post-federation data processing and reconciliation | v0.10.0 |
+
+### Prompt Hooks Details
+
+The prompt hooks allow plugins to intercept and modify prompt retrieval and rendering:
+
+- **`prompt_pre_fetch`**: Receives the prompt name and arguments before prompt template retrieval.  Can modify the arguments.
+- **`prompt_post_fetch`**: Receives the completed prompt after rendering.  Can modify the prompt text or block it from being returned.
+
+Example Use Cases:
+
+- Detect prompt injection attacks
+- Sanitize or anonymize prompts
+- Search and replace
+
+#### Prompt Hook Payloads
+
+**PromptPrehookPayload**: Payload for prompt pre-fetch hooks.
+
+```python
+class PromptPrehookPayload(BaseModel):
+    name: str                                    # Prompt template name
+    args: Optional[dict[str, str]] = Field(default_factory=dict)  # Template arguments
+```
+
+**Example**:
+```python
+payload = PromptPrehookPayload(
+    name="user_greeting",
+    args={"user_name": "Alice", "time_of_day": "morning"}
+)
+```
+
+**PromptPosthookPayload**: Payload for prompt post-fetch hooks.
+
+```python
+class PromptPosthookPayload(BaseModel):
+    name: str                                    # Prompt name
+    result: PromptResult                         # Rendered prompt result
+```
 
 ### Tool Hooks Details
 
@@ -206,11 +461,48 @@ The tool hooks enable plugins to intercept and modify tool invocations:
 - **`tool_post_invoke`**: Receives the tool result after execution. Can modify the result or block it from being returned.
 
 Example use cases:
+
 - PII detection and masking in tool inputs/outputs
 - Rate limiting specific tools
 - Audit logging of tool usage
 - Input validation and sanitization
 - Output filtering and transformation
+
+#### Tool Hook Payloads
+
+**ToolPreInvokePayload**: Payload for tool pre-invoke hooks.
+
+```python
+class ToolPreInvokePayload(BaseModel):
+    name: str                                    # Tool name
+    args: Optional[dict[str, Any]] = Field(default_factory=dict)  # Tool arguments
+    headers: Optional[HttpHeaderPayload] = None  # HTTP pass-through headers
+```
+
+**ToolPostInvokePayload**: Payload for tool post-invoke hooks.
+
+```python
+class ToolPostInvokePayload(BaseModel):
+    name: str                                    # Tool name
+    result: Any                                  # Tool execution result
+```
+
+The associated `HttpHeaderPayload` object for the `ToolPreInvokePayload` is as follows:
+
+Special payload for HTTP header manipulation.
+
+```python
+class HttpHeaderPayload(RootModel[dict[str, str]]):
+    # Provides dictionary-like access to HTTP headers
+    # Supports: __iter__, __getitem__, __setitem__, __len__
+```
+
+**Usage**:
+```python
+headers = HttpHeaderPayload({"Authorization": "Bearer token", "Content-Type": "application/json"})
+headers["X-Custom-Header"] = "custom_value"
+auth_header = headers["Authorization"]
+```
 
 ### Resource Hooks Details
 
@@ -220,6 +512,7 @@ The resource hooks enable plugins to intercept and modify resource fetching:
 - **`resource_post_fetch`**: Receives the resource content after fetching. Can modify the content, redact sensitive information, or block it from being returned.
 
 Example use cases:
+
 - Protocol validation (block non-HTTPS resources)
 - Domain blocklisting/allowlisting
 - Content size limiting
@@ -227,220 +520,390 @@ Example use cases:
 - Content transformation and filtering
 - Resource caching metadata
 
-Planned hooks (not yet implemented):
+#### Resource Hook Payloads
 
-- `server_pre_register` / `server_post_register` - Server validation
-- `auth_pre_check` / `auth_post_check` - Custom authentication
-- `federation_pre_sync` / `federation_post_sync` - Gateway federation
+**ResourcePreFetchPayload**: Payload for resource pre-fetch hooks.
 
-## Writing Plugins
+```python
+class ResourcePreFetchPayload(BaseModel):
+    uri: str                                     # Resource URI
+    metadata: Optional[dict[str, Any]] = Field(default_factory=dict)  # Request metadata
+```
 
-### Plugin Structure
+**ResourcePostFetchPayload**: Payload for resource post-fetch hooks.
+
+```python
+class ResourcePostFetchPayload(BaseModel):
+    uri: str                                     # Resource URI
+    content: Any                                 # Fetched resource content
+```
+
+### HTTP Authentication & Middleware Hooks
+
+For HTTP request processing and authentication, see the dedicated guide:
+
+- **[HTTP Authentication Hooks Guide](./http-auth-hooks.md)** - Complete guide to `http_pre_request`, `http_auth_resolve_user`, `http_auth_check_permission`, and `http_post_request` hooks
+
+### Agent Hooks Details
+
+The agent hooks allow plugins to intercept and modify Agent-to-Agent (A2A) interactions:
+
+- **`agent_pre_invoke`**: Receives agent invocation details before the agent processes the request. Can filter messages, restrict tools, override model settings, or block the request entirely.
+- **`agent_post_invoke`**: Receives the agent's response after processing. Can filter response content, redact sensitive information, or add audit metadata.
+
+Example Use Cases:
+
+- Filter offensive or sensitive content in messages
+- Restrict which tools an agent can access
+- Override model selection or system prompts
+- Apply content moderation to agent responses
+- Log all agent interactions for compliance
+- Block agents from accessing certain resources
+
+#### Agent Hook Payloads
+
+**AgentPreInvokePayload**: Payload for agent pre-invoke hooks.
+
+```python
+class AgentPreInvokePayload(BaseModel):
+    agent_id: str                                    # Agent identifier (can be modified for routing)
+    messages: List[Message]                          # Conversation messages (can be filtered/transformed)
+    tools: Optional[List[str]] = None                # Available tools (can be restricted)
+    headers: Optional[HttpHeaderPayload] = None      # HTTP headers
+    model: Optional[str] = None                      # Model override
+    system_prompt: Optional[str] = None              # System instructions override
+    parameters: Optional[Dict[str, Any]] = None      # LLM parameters (temperature, max_tokens, etc.)
+```
+
+**AgentPostInvokePayload**: Payload for agent post-invoke hooks.
+
+```python
+class AgentPostInvokePayload(BaseModel):
+    agent_id: str                                    # Agent identifier
+    messages: List[Message]                          # Response messages (can be filtered/transformed)
+    tool_calls: Optional[List[Dict[str, Any]]] = None  # Tool invocations made by agent
+```
+
+**Example Plugin:**
 
 ```python
 from mcpgateway.plugins.framework import (
     Plugin,
-    PluginConfig,
     PluginContext,
-    PromptPrehookPayload,
-    PromptPrehookResult,
-    PromptPosthookPayload,
-    PromptPosthookResult,
-    ToolPreInvokePayload,
-    ToolPreInvokeResult,
-    ToolPostInvokePayload,
-    ToolPostInvokeResult,
-    ResourcePreFetchPayload,
-    ResourcePreFetchResult,
-    ResourcePostFetchPayload,
-    ResourcePostFetchResult
+    AgentPreInvokePayload,
+    AgentPreInvokeResult,
+    PluginViolation,
 )
 
+class AgentSafetyPlugin(Plugin):
+    """Filter agent interactions for safety."""
+
+    async def agent_pre_invoke(
+        self,
+        payload: AgentPreInvokePayload,
+        context: PluginContext
+    ) -> AgentPreInvokeResult:
+        # Restrict dangerous tools
+        if payload.tools:
+            safe_tools = [t for t in payload.tools if t not in ["file_delete", "system_exec"]]
+            if len(safe_tools) < len(payload.tools):
+                payload.tools = safe_tools
+                self.logger.info(f"Restricted tools for agent {payload.agent_id}")
+
+        # Filter offensive content in messages
+        for msg in payload.messages:
+            if self._contains_offensive_content(msg.content):
+                return AgentPreInvokeResult(
+                    continue_processing=False,
+                    violation=PluginViolation(
+                        code="OFFENSIVE_CONTENT",
+                        reason="Message contains offensive content",
+                        description="Agent request blocked due to policy violation"
+                    )
+                )
+
+        return AgentPreInvokeResult(
+            modified_payload=payload,
+            metadata={"safety_checked": True}
+        )
+```
+
+### Planned Hooks (Roadmap)
+
+- `server_pre_register` / `server_post_register` - Server validation
+- `federation_pre_sync` / `federation_post_sync` - Gateway federation
+
+## Writing Plugins
+
+### Understanding the Plugin Base Class
+
+The `Plugin` class is an **abstract base class (ABC)** that provides the foundation for all plugins. You **must** subclass it and implement at least one hook method to create a functional plugin.
+
+```python
+from abc import ABC
+from mcpgateway.plugins.framework import Plugin, PluginConfig
+
 class MyPlugin(Plugin):
-    """Example plugin implementation."""
+    """Your plugin must inherit from Plugin."""
 
     def __init__(self, config: PluginConfig):
         super().__init__(config)
         # Initialize plugin-specific configuration
         self.my_setting = config.config.get("my_setting", "default")
+```
 
-    async def prompt_pre_fetch(
-        self,
-        payload: PromptPrehookPayload,
-        context: PluginContext
-    ) -> PromptPrehookResult:
-        """Process prompt before retrieval."""
+!!! important "Key Design Principle"
+    Plugins implement **only the hooks they need** using one of three registration patterns. You don't need to implement all hooks - just the ones relevant to your plugin's purpose.
 
-        # Access prompt name and arguments
-        prompt_name = payload.name
-        args = payload.args
+### Three Hook Registration Patterns
 
-        # Example: Block requests with forbidden words
-        if "forbidden" in str(args.values()).lower():
-            return PromptPrehookResult(
-                continue_processing=False,
-                violation=PluginViolation(
-                    plugin_name=self.name,
-                    description="Forbidden content detected",
-                    violation_code="FORBIDDEN_CONTENT",
-                    details={"found_in": "arguments"}
-                )
-            )
+#### Pattern 1: Convention-Based (Recommended)
 
-        # Example: Modify arguments
-        if "transform_me" in args:
-            args["transform_me"] = args["transform_me"].upper()
-            return PromptPrehookResult(
-                modified_payload=PromptPrehookPayload(prompt_name, args)
-            )
+The simplest approach - just name your method to match the hook type:
 
-        # Allow request to continue unmodified
-        return PromptPrehookResult()
+```python
+from mcpgateway.plugins.framework import (
+    Plugin,
+    PluginContext,
+    ToolPreInvokePayload,
+    ToolPreInvokeResult,
+)
 
-    async def prompt_post_fetch(
-        self,
-        payload: PromptPosthookPayload,
-        context: PluginContext
-    ) -> PromptPosthookResult:
-        """Process prompt after rendering."""
-
-        # Access rendered prompt
-        prompt_result = payload.result
-
-        # Example: Add metadata to context
-        context.metadata["processed_by"] = self.name
-
-        # Example: Modify response
-        for message in prompt_result.messages:
-            message.content.text = message.content.text.replace(
-                "old_text", "new_text"
-            )
-
-        return PromptPosthookResult(
-            modified_payload=payload
-        )
+class ContentFilterPlugin(Plugin):
+    """Convention-based hook - method name matches hook type."""
 
     async def tool_pre_invoke(
         self,
         payload: ToolPreInvokePayload,
         context: PluginContext
     ) -> ToolPreInvokeResult:
-        """Process tool before invocation."""
+        """This hook is automatically discovered by its name."""
 
-        # Access tool name and arguments
-        tool_name = payload.name
-        args = payload.args
-
-        # Example: Block dangerous operations
-        if tool_name == "file_delete" and "system" in str(args):
+        # Block dangerous operations
+        if payload.name == "file_delete" and "system" in str(payload.args):
+            from mcpgateway.plugins.framework import PluginViolation
             return ToolPreInvokeResult(
                 continue_processing=False,
                 violation=PluginViolation(
-                    plugin_name=self.name,
-                    description="Dangerous operation blocked",
-                    violation_code="DANGEROUS_OP",
-                    details={"tool": tool_name}
+                    code="DANGEROUS_OP",
+                    reason="Dangerous operation blocked",
+                    description=f"Cannot delete system files"
                 )
             )
 
-        # Example: Modify arguments
-        if "sanitize_me" in args:
-            args["sanitize_me"] = self.sanitize_input(args["sanitize_me"])
-            return ToolPreInvokeResult(
-                modified_payload=ToolPreInvokePayload(tool_name, args)
-            )
+        # Modify arguments
+        modified_args = {**payload.args, "processed": True}
+        modified_payload = ToolPreInvokePayload(
+            name=payload.name,
+            args=modified_args,
+            headers=payload.headers
+        )
 
-        return ToolPreInvokeResult()
+        return ToolPreInvokeResult(
+            modified_payload=modified_payload,
+            metadata={"processed_by": self.name}
+        )
+```
 
-    async def tool_post_invoke(
+**When to use:** Default choice for implementing standard framework hooks.
+
+#### Pattern 2: Decorator-Based (Custom Method Names)
+
+Use the `@hook` decorator to register a hook with a custom method name:
+
+```python
+from mcpgateway.plugins.framework import Plugin, PluginContext
+from mcpgateway.plugins.framework.decorator import hook
+from mcpgateway.plugins.framework import (
+    ToolHookType,
+    ToolPostInvokePayload,
+    ToolPostInvokeResult,
+)
+
+class AuditPlugin(Plugin):
+    """Decorator-based hook with descriptive method name."""
+
+    @hook(ToolHookType.TOOL_POST_INVOKE)
+    async def audit_tool_execution(
         self,
         payload: ToolPostInvokePayload,
         context: PluginContext
     ) -> ToolPostInvokeResult:
-        """Process tool after invocation."""
+        """Method name doesn't match hook type, but @hook decorator registers it."""
 
-        # Access tool result
-        tool_name = payload.name
-        result = payload.result
+        # Log tool execution
+        self.logger.info(f"Tool executed: {payload.name}")
 
-        # Example: Filter sensitive data from results
-        if isinstance(result, dict) and "sensitive_data" in result:
-            result["sensitive_data"] = "[REDACTED]"
-            return ToolPostInvokeResult(
-                modified_payload=ToolPostInvokePayload(tool_name, result)
+        # Filter sensitive data from results
+        if isinstance(payload.result, dict) and "password" in payload.result:
+            filtered_result = {**payload.result, "password": "[REDACTED]"}
+            modified_payload = ToolPostInvokePayload(
+                name=payload.name,
+                result=filtered_result
             )
+            return ToolPostInvokeResult(modified_payload=modified_payload)
 
-        # Example: Add audit metadata
-        context.metadata["tool_executed"] = tool_name
-        context.metadata["execution_time"] = time.time()
+        return ToolPostInvokeResult(continue_processing=True)
+```
 
-        return ToolPostInvokeResult()
+**When to use:** When you want descriptive method names that better match your plugin's purpose.
 
-    async def resource_pre_fetch(
+#### Pattern 3: Custom Hooks (Advanced)
+
+Register completely new hook types with custom payload and result types:
+
+```python
+from mcpgateway.plugins.framework import (
+    Plugin,
+    PluginContext,
+    PluginPayload,
+    PluginResult
+)
+from mcpgateway.plugins.framework.decorator import hook
+
+# Define custom payload type
+class EmailPayload(PluginPayload):
+    recipient: str
+    subject: str
+    body: str
+
+# Define custom result type
+class EmailResult(PluginResult[EmailPayload]):
+    pass
+
+class EmailPlugin(Plugin):
+    """Custom hook with new hook type."""
+
+    @hook("email_pre_send", EmailPayload, EmailResult)
+    async def validate_email(
         self,
-        payload: ResourcePreFetchPayload,
+        payload: EmailPayload,
         context: PluginContext
-    ) -> ResourcePreFetchResult:
-        """Process resource before fetching."""
+    ) -> EmailResult:
+        """Completely new hook type: 'email_pre_send'"""
 
-        # Access resource URI and metadata
-        uri = payload.uri
-        metadata = payload.metadata
-
-        # Example: Block certain protocols
-        from urllib.parse import urlparse
-        parsed = urlparse(uri)
-        if parsed.scheme not in ["http", "https", "file"]:
-            return ResourcePreFetchResult(
-                continue_processing=False,
-                violation=PluginViolation(
-                    plugin_name=self.name,
-                    description=f"Protocol {parsed.scheme} not allowed",
-                    violation_code="PROTOCOL_BLOCKED",
-                    details={"uri": uri, "protocol": parsed.scheme}
-                )
+        # Validate email address
+        if "@" not in payload.recipient:
+            modified_payload = EmailPayload(
+                recipient=f"{payload.recipient}@example.com",
+                subject=payload.subject,
+                body=payload.body
+            )
+            return EmailResult(
+                modified_payload=modified_payload,
+                metadata={"fixed_email": True}
             )
 
-        # Example: Add metadata
-        metadata["validated_by"] = self.name
-        return ResourcePreFetchResult(
-            modified_payload=ResourcePreFetchPayload(uri, metadata)
-        )
+        return EmailResult(continue_processing=True)
+```
 
-    async def resource_post_fetch(
-        self,
-        payload: ResourcePostFetchPayload,
-        context: PluginContext
-    ) -> ResourcePostFetchResult:
-        """Process resource after fetching."""
+**When to use:** When extending the framework with domain-specific hook points not covered by standard hooks.
 
-        # Access resource content
-        uri = payload.uri
-        content = payload.content
+### Hook Method Signature Requirements
 
-        # Example: Redact sensitive patterns from text content
-        if hasattr(content, 'text') and content.text:
-            # Redact email addresses
-            import re
-            content.text = re.sub(
-                r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                '[EMAIL_REDACTED]',
-                content.text
-            )
+All hook methods must follow these rules:
 
-        return ResourcePostFetchResult(
-            modified_payload=ResourcePostFetchPayload(uri, content)
-        )
+1. **Must be async**: All hooks are asynchronous
+2. **Three parameters**: `self`, `payload`, `context`
+3. **Type hints required**: Payload and result types must be properly typed for validation
+4. **Return appropriate result type**: Each hook returns a `PluginResult` typed with the hook's payload type
+
+```python
+async def hook_name(
+    self,
+    payload: PayloadType,           # Specific to the hook (e.g., ToolPreInvokePayload)
+    context: PluginContext          # Always PluginContext
+) -> PluginResult[PayloadType]:     # PluginResult parameterized by payload type
+    """Hook implementation."""
+    pass
+```
+
+**Understanding Result Types:**
+
+Each hook has a corresponding result type that is actually a type alias for `PluginResult[PayloadType]`:
+
+```python
+# These are type aliases defined in the framework
+ToolPreInvokeResult = PluginResult[ToolPreInvokePayload]
+ToolPostInvokeResult = PluginResult[ToolPostInvokePayload]
+PromptPrehookResult = PluginResult[PromptPrehookPayload]
+HttpAuthResolveUserResult = PluginResult[dict]  # Special case for user dict
+# ... and so on for each hook type
+```
+
+This means when you return a result, you're returning a `PluginResult` instance:
+
+```python
+# All of these are valid ways to construct results:
+return ToolPreInvokeResult(continue_processing=True)
+return ToolPreInvokeResult(modified_payload=new_payload)
+return ToolPreInvokeResult(
+    modified_payload=new_payload,
+    metadata={"processed": True}
+)
+```
+
+### Plugin Lifecycle Methods
+
+Plugins can implement optional lifecycle methods:
+
+```python
+class MyPlugin(Plugin):
+    async def initialize(self):
+        """Called when plugin is loaded."""
+        # Set up resources, connections, etc.
+        self._session = aiohttp.ClientSession()
 
     async def shutdown(self):
-        """Cleanup when plugin shuts down."""
-        # Close connections, save state, etc.
-        pass
+        """Called when plugin manager shuts down."""
+        # Cleanup resources
+        if hasattr(self, '_session'):
+            await self._session.close()
 ```
 
 ### Plugin Context and State
 
-Plugins can maintain state between pre/post hooks:
+Each hook function has a `context` object of type `PluginContext` which is designed to allow plugins to pass state between one another (across pre/post hook pairs) or for a plugin to pass state information to itself across pre/post hook pairs.  The plugin context looks as follows:
+
+```python
+class GlobalContext(BaseModel):
+    """The global context, which shared across all plugins.
+
+    Attributes:
+            request_id (str): ID of the HTTP request.
+            user (str): user ID associated with the request.
+            tenant_id (str): tenant ID.
+            server_id (str): server ID.
+            metadata (Optional[dict[str,Any]]): a global shared metadata across plugins (Read-only from plugin's perspective.).
+            state (Optional[dict[str,Any]]): a global shared state across plugins.
+    """
+
+    request_id: str
+    user: Optional[str] = None
+    tenant_id: Optional[str] = None
+    server_id: Optional[str] = None
+    state: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PluginContext(BaseModel):
+    """The plugin's context, which lasts a request lifecycle.
+
+    Attributes:
+       state:  the inmemory state of the request.
+       global_context: the context that is shared across plugins.
+       metadata: plugin meta data.
+    """
+
+    state: dict[str, Any] = Field(default_factory=dict)
+    global_context: GlobalContext
+    metadata: dict[str, Any] = Field(default_factory=dict)
+```
+
+As can be seen, the `PluginContext` has both a `state` dictionary and a `global_context` object that also has a `state` dictionary. A single plugin can share state between pre/post hook pairs by using the
+the `PluginContext` state dictionary. It can share state with other plugins using the `context.global_context.state` dictionary.  Metadata for the specific hook site is passed in through the `metadata` dictionaries in the `context.global_context.metadata`. It is meant to be read-only. The `context.metadata` is plugin specific metadata and can be used to store metadata information such as timing information.
+
+The following shows how plugins can maintain state between pre/post hooks:
 
 ```python
 async def prompt_pre_fetch(self, payload, context):
@@ -460,6 +923,32 @@ async def prompt_post_fetch(self, payload, context):
 
     return PromptPosthookResult()
 ```
+
+#### Tool and Gateway Metadata
+
+Currently, the tool pre/post hooks have access to tool and gateway metadata through the global context metadata dictionary.  They are accessible as follows:
+
+It can be accessed inside of the tool hooks through:
+
+```python
+from mcpgateway.plugins.framework.constants import GATEWAY_METADATA, TOOL_METADATA
+
+tool_meta = context.global_context.metadata[TOOL_METADATA]
+assert tool_meta.original_name == "test_tool"
+assert tool_meta.url.host == "example.com"
+assert tool_meta.integration_type == "REST" or tool_meta.integration_type == "MCP"
+```
+
+Note, if the integration type is `MCP` the gateway information may also be available as follows.
+
+```python
+gateway_meta = context.global_context.metadata[GATEWAY_METADATA]
+assert gateway_meta.name == "test_gateway"
+assert gateway_meta.transport == "sse"
+assert gateway_meta.url.host == "example.com"
+```
+
+Metadata for other entities such as prompts and resources will be added in future versions of the gateway.
 
 ### External Service Plugin Example
 
@@ -495,9 +984,9 @@ class LLMGuardPlugin(Plugin):
                     return PromptPrehookResult(
                         continue_processing=False,
                         violation=PluginViolation(
-                            plugin_name=self.name,
+                            reason="External service blocked",
                             description=result.get("reason", "Content blocked"),
-                            violation_code="LLMGUARD_BLOCKED",
+                            code="LLMGUARD_BLOCKED",
                             details=result
                         )
                     )
@@ -508,9 +997,9 @@ class LLMGuardPlugin(Plugin):
                     return PromptPrehookResult(
                         continue_processing=False,
                         violation=PluginViolation(
-                            plugin_name=self.name,
+                            reason="Service error",
                             description=f"Service error: {str(e)}",
-                            violation_code="SERVICE_ERROR",
+                            code="SERVICE_ERROR",
                             details={"error": str(e)}
                         )
                     )
@@ -538,6 +1027,7 @@ author: "Your Name"
 version: "1.0.0"
 tags: ["custom", "filter"]
 available_hooks:
+
   - "prompt_pre_fetch"
   - "prompt_post_fetch"
 default_config:
@@ -561,6 +1051,7 @@ class MyPlugin(Plugin):
 ```yaml
 # plugins/config.yaml
 plugins:
+
   - name: "MyCustomPlugin"
     kind: "plugins.my_plugin.plugin.MyPlugin"
     hooks: ["prompt_pre_fetch"]
@@ -595,31 +1086,14 @@ async def test_my_plugin():
 
 ### 1. Error Handling
 
-Always handle errors gracefully:
+Errors inside a plugin should be raised as exceptions.  The plugin manager will catch the error, and its behavior depends on both the gateway's and plugin's configuration as follows:
 
-```python
-async def prompt_pre_fetch(self, payload, context):
-    try:
-        # Plugin logic
-        pass
-    except Exception as e:
-        logger.error(f"Plugin {self.name} error: {e}")
+1. if `plugin_settings.fail_on_plugin_error` in the plugin `config.yaml` is set to `true` the exception is bubbled up as a PluginError and the error is passed to the client of the MCP Context Forge regardless of the plugin mode.
+2. if `plugin_settings.fail_on_plugin_error` is set to false the error is handled based off of the plugin mode in the plugin's config as follows:
+  * if `mode` is `enforce`, both violations and errors are bubbled up as exceptions and the execution is blocked.
+  * if `mode` is `enforce_ignore_error`, violations are bubbled up as exceptions and execution is blocked, but errors are logged and execution continues.
+  * if `mode` is `permissive`, execution is allowed to proceed whether there are errors or violations. Both are logged.
 
-        # In permissive mode, log and continue
-        if self.mode == PluginMode.PERMISSIVE:
-            return PromptPrehookResult()
-
-        # In enforce mode, block the request
-        return PromptPrehookResult(
-            continue_processing=False,
-            violation=PluginViolation(
-                plugin_name=self.name,
-                description="Plugin error occurred",
-                violation_code="PLUGIN_ERROR",
-                details={"error": str(e)}
-            )
-        )
-```
 
 ### 2. Performance Considerations
 
@@ -656,6 +1130,7 @@ Use conditions to limit plugin scope:
 
 ```yaml
 conditions:
+
   - prompts: ["sensitive_prompt"]
     server_ids: ["prod-server-1", "prod-server-2"]
     tenant_ids: ["enterprise-tenant"]
@@ -668,42 +1143,14 @@ Use appropriate log levels:
 
 ```python
 logger.debug(f"Plugin {self.name} processing prompt: {payload.name}")
-logger.info(f"Plugin {self.name} blocked request: {violation_code}")
+logger.info(f"Plugin {self.name} blocked request: {violation.code}")
 logger.warning(f"Plugin {self.name} timeout approaching")
 logger.error(f"Plugin {self.name} failed: {error}")
 ```
 
 ## API Reference
 
-### Plugin Management Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/plugins` | GET | List all loaded plugins |
-| `/plugins/stats` | GET | Get plugin execution statistics |
-| `/plugins/reload/{name}` | POST | Reload a specific plugin |
-| `/plugins/stats/reset` | POST | Reset plugin statistics |
-
-### Example API Usage
-
-```bash
-# List plugins
-curl http://localhost:8000/plugins
-
-# Response
-[
-  {
-    "name": "ContentFilter",
-    "priority": 100,
-    "mode": "enforce",
-    "hooks": ["prompt_pre_fetch", "prompt_post_fetch"],
-    "tags": ["security", "filter"],
-    "conditions": {
-      "prompts": ["customer_chat"]
-    }
-  }
-]
-```
+Plugin management endpoints are not exposed in the gateway at this time.
 
 ## Troubleshooting
 
@@ -758,6 +1205,7 @@ plugins:
       proto: STREAMABLEHTTP
       url: "https://ai-safety.internal.corp/llamaguard/v1"
     conditions:
+
       - server_ids: ["production-chat", "customer-support"]
 
   # Step 3: OpenAI Moderation for Final Check
@@ -793,6 +1241,7 @@ plugins:
     mode: "enforce"
     priority: 50
     conditions:
+
       - tenant_ids: ["enterprise-corp", "banking-client"]
         tools: ["database-query", "file-access", "system-command"]
     config:
@@ -807,6 +1256,7 @@ plugins:
     mode: "permissive"
     priority: 75
     conditions:
+
       - tenant_ids: ["free-tier"]
     config:
       profanity_filter: true
@@ -819,6 +1269,7 @@ plugins:
 ```yaml
 # Development Environment
 plugins:
+
   - name: "DevPIIFilter"
     kind: "plugins.pii_filter.pii_filter.PIIFilterPlugin"
     hooks: ["prompt_pre_fetch", "tool_pre_invoke"]
@@ -829,12 +1280,14 @@ plugins:
       log_detections: true
       mask_strategy: "partial"
       whitelist_patterns:
+
         - "test@example.com"
         - "555-555-5555"
         - "123-45-6789"  # Test SSN
 
 # Production Environment
 plugins:
+
   - name: "ProdPIIFilter"
     kind: "plugins.pii_filter.pii_filter.PIIFilterPlugin"
     hooks: ["prompt_pre_fetch", "prompt_post_fetch", "tool_pre_invoke", "tool_post_invoke"]
@@ -855,7 +1308,7 @@ plugins:
 
 ### Benchmark Results
 
-- **Self-Contained Plugins:** <1ms latency overhead per hook
+- **Native Plugins:** <1ms latency overhead per hook
 - **External Service Plugins:** 10-100ms depending on service (cached responses: <5ms)
 - **Memory Usage:** ~5MB base overhead + ~1MB per active plugin
 - **Throughput:** Tested to 1,000+ req/s with 5 active plugins
@@ -870,6 +1323,7 @@ plugin_settings:
   fail_on_plugin_error: false  # Continue processing on plugin failures
 
 plugins:
+
   - name: "CachedAIService"
     kind: "external"
     priority: 50
@@ -882,88 +1336,41 @@ plugins:
 
 ## Monitoring and Observability
 
-### Plugin Metrics
+General observability guidance:
 
-The framework exposes comprehensive metrics for monitoring:
-
-```bash
-# Plugin execution metrics
-mcpgateway_plugin_executions_total{plugin="PIIFilter",hook="prompt_pre_fetch",status="success"}
-mcpgateway_plugin_duration_seconds{plugin="PIIFilter",hook="prompt_pre_fetch"}
-mcpgateway_plugin_violations_total{plugin="PIIFilter",violation_code="PII_DETECTED"}
-mcpgateway_plugin_errors_total{plugin="LlamaGuard",error_type="timeout"}
-
-# Context and memory metrics
-mcpgateway_plugin_contexts_active
-mcpgateway_plugin_contexts_cleaned_total
-mcpgateway_plugin_memory_usage_bytes
-```
-
-### Health Check Integration
-
-```yaml
-plugins:
-  - name: "ExternalAIService"
-    kind: "external"
-    mcp:
-      proto: STREAMABLEHTTP
-      url: "https://ai-service.corp/api/v1"
-      health_check_endpoint: "/health"
-      health_check_interval: 30
-    config:
-      circuit_breaker_enabled: true
-      circuit_breaker_failure_threshold: 5
-      circuit_breaker_timeout: 60
-```
+- Emit structured logs at appropriate levels (debug/info/warn/error)
+- Track plugin execution time in logs where useful
+- Use external APM/logging stacks for end‑to‑end tracing if needed
 
 ## Security Considerations
 
 ### Plugin Isolation and Security
 
-- **Input Validation:** All plugin configurations validated against JSON schemas
+- **Input Validation:** Plugin configurations validated with Pydantic models
 - **Timeout Protection:** Configurable timeouts prevent plugin hangs
-- **Resource Limits:** Memory and payload size limits prevent resource exhaustion
+- **Payload Limits:** Payload size guards (~1MB) prevent resource exhaustion
 - **Error Isolation:** Plugin failures don't affect gateway stability
-- **Audit Logging:** Complete audit trail of plugin executions and violations
+- **Audit Logging:** Log plugin executions and violations
 
-### External Service Security
+### External Plugin Security
 
-```yaml
-# Secure external service configuration
-plugins:
-  - name: "SecureExternalService"
-    kind: "external"
-    mcp:
-      proto: STREAMABLEHTTP
-      url: "https://secure-ai-service.corp/api/v1"
-      tls_verify: true
-      tls_client_cert: "/etc/ssl/certs/client.crt"
-      tls_client_key: "/etc/ssl/private/client.key"
-      auth:
-        type: "bearer"
-        token: "${AI_SERVICE_TOKEN}"  # Environment variable
-    config:
-      allowed_response_codes: [200, 201]
-      max_response_size_mb: 10
-      connection_pool_size: 20
-```
+Secure external plugin servers as you would any service (authentication, TLS). The gateway's external plugin client communicates over MCP (STDIO or Streamable HTTP).
 
 ## Future Roadmap
 
-### Near-term Enhancements (v0.7.0)
+### Near‑term Enhancements
 
-- **Server Attestation Hooks:** `server_pre_register` with TPM/TEE support
-- **Authentication Hooks:** `auth_pre_check`/`auth_post_check` for custom auth
+- **Server Attestation Hooks:** `server_pre_register` (TPM/TEE)
+- **Authentication Hooks:** `auth_pre_check`/`auth_post_check`
 - **Admin UI:** Visual plugin management and monitoring dashboard
 - **Hot Configuration Reload:** Update plugin configs without restart
 - **Advanced Caching:** Redis-backed caching for external service calls
 
-### Long-term Vision (v0.8.0+)
+### Long-term Vision (v0.9.0+)
 
 - **Plugin Marketplace:** Community plugin sharing and discovery
 - **Advanced Analytics:** Plugin performance analytics and optimization recommendations
 - **A/B Testing Framework:** Split traffic between plugin configurations
-- **Policy as Code:** Integration with Open Policy Agent (OPA) for complex rule evaluation
 - **Machine Learning Pipeline:** Built-in support for custom ML model deployment
 
 ## Contributing

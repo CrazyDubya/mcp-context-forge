@@ -3,6 +3,7 @@
 This guide explains how to configure and operate OAuth 2.0 authentication for MCP Gateway when connecting to MCP servers or downstream APIs on behalf of users or services.
 
 Related design docs:
+
 - Architecture: [oauth-design.md](../architecture/oauth-design.md)
 - UI Flow: [oauth-authorization-code-ui-design.md](../architecture/oauth-authorization-code-ui-design.md)
 
@@ -50,6 +51,7 @@ See the flow details and security model in the architecture docs.
 # OAuth HTTP behavior
 OAUTH_REQUEST_TIMEOUT=30      # Seconds
 OAUTH_MAX_RETRIES=3           # Retries for transient failures
+OAUTH_DEFAULT_TIMEOUT=3600    # Default OAuth token timeout in seconds
 
 # Secret encryption for stored OAuth client secrets (and tokens if enabled)
 AUTH_ENCRYPTION_SECRET=<strong-random-key>
@@ -133,15 +135,18 @@ sequenceDiagram
 
 ---
 
-## Token Storage and Refresh (Optional)
+## Token Storage and Refresh
 
-By default, access tokens are fetched on-demand and not persisted. The Authorization Code UI design introduces optional storage and refresh:
+OAuth tokens are stored per gateway and user for the Authorization Code flow to ensure proper security isolation:
 
-- Store tokens per gateway + user
+- **User-Scoped Tokens**: OAuth tokens are scoped per MCP Gateway user (using app_user_email field) to prevent token sharing between users
+- Store tokens per gateway + user combination with unique constraints
 - Auto-refresh using refresh tokens when near expiry
 - Encrypt tokens at rest using `AUTH_ENCRYPTION_SECRET`
+- Foreign key relationships ensure token cleanup when users are deleted
 
-If enabled in future releases, you will be able to toggle token storage and auto-refresh in the gateway's OAuth settings. See oauth-authorization-code-ui-design.md.
+!!! important "Security Enhancement"
+    OAuth tokens are now user-scoped to prevent token sharing between users. Each Authorization Code flow token is tied to the specific MCP Gateway user who authorized it, providing better security isolation.
 
 ---
 
@@ -184,8 +189,28 @@ See also: [securing.md](./securing.md) for general hardening guidance and [proxy
 
 ---
 
+## PKCE Support
+
+MCP Gateway implements **PKCE (Proof Key for Code Exchange)** as defined in [RFC 7636](https://tools.ietf.org/html/rfc7636) for all Authorization Code flows. This provides enhanced security, especially for:
+
+- Public clients (mobile apps, SPAs, desktop apps)
+- Environments where client secrets cannot be securely stored
+- Protection against authorization code interception attacks
+
+**How it works:**
+
+1. Gateway generates a random `code_verifier` (43-128 characters)
+2. Computes `code_challenge` = BASE64URL(SHA256(code_verifier))
+3. Sends `code_challenge` and `code_challenge_method=S256` in authorization request
+4. Stores `code_verifier` in OAuth state (encrypted at rest)
+5. Includes `code_verifier` when exchanging authorization code for token
+
+PKCE is **automatically enabled** for all Authorization Code flows - no configuration needed.
+
+---
+
 ## FAQ
 
-- Can I use PKCE? Not yet; planned as a future enhancement.
-- Can I configure per-tool OAuth? Roadmap considers multiple OAuth configs per tool; current design is per-gateway.
-- Do you cache tokens? Default is no caching; tokens are fetched per operation. Optional storage/refresh is planned per the UI design.
+- **Can I use PKCE?** Yes! PKCE is automatically enabled for all Authorization Code flows (RFC 7636).
+- **Can I configure per-tool OAuth?** Roadmap considers multiple OAuth configs per tool; current design is per-gateway.
+- **Do you cache tokens?** Default is no caching; tokens are fetched per operation. Optional storage/refresh is available for Authorization Code flows.

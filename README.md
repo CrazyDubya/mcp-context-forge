@@ -64,47 +64,54 @@ ContextForge MCP Gateway is a feature-rich gateway, proxy and MCP Registry that 
     * 8.3. [pip (alternative)](#pip-alternative)
     * 8.4. [Optional (PostgreSQL adapter)](#optional-postgresql-adapter)
         * 8.4.1. [Quick Postgres container](#quick-postgres-container)
-* 9. [Configuration (`.env` or env vars)](#configuration-env-or-env-vars)
-    * 9.1. [Basic](#basic)
-    * 9.2. [Authentication](#authentication)
-    * 9.3. [UI Features](#ui-features)
-    * 9.4. [Security](#security)
-    * 9.5. [Logging](#logging)
-    * 9.6. [Transport](#transport)
-    * 9.7. [Federation](#federation)
-    * 9.8. [Resources](#resources)
-    * 9.9. [Tools](#tools)
-    * 9.10. [Prompts](#prompts)
-    * 9.11. [Health Checks](#health-checks)
-    * 9.12. [Database](#database)
-    * 9.13. [Cache Backend](#cache-backend)
-    * 9.14. [Development](#development)
-* 10. [Running](#running)
-    * 10.1. [Makefile](#makefile)
-    * 10.2. [Script helper](#script-helper)
-    * 10.3. [Manual (Uvicorn)](#manual-uvicorn)
-* 11. [Authentication examples](#authentication-examples)
-* 12. [☁️ AWS / Azure / OpenShift](#️-aws--azure--openshift)
-* 13. [☁️ IBM Cloud Code Engine Deployment](#️-ibm-cloud-code-engine-deployment)
-    * 13.1. [🔧 Prerequisites](#-prerequisites-1)
-    * 13.2. [📦 Environment Variables](#-environment-variables)
-    * 13.3. [🚀 Make Targets](#-make-targets)
-    * 13.4. [📝 Example Workflow](#-example-workflow)
-* 14. [API Endpoints](#api-endpoints)
-* 15. [Testing](#testing)
-* 16. [Project Structure](#project-structure)
-* 17. [API Documentation](#api-documentation)
-* 18. [Makefile targets](#makefile-targets)
-* 19. [🔍 Troubleshooting](#-troubleshooting)
-    * 19.1. [Diagnose the listener](#diagnose-the-listener)
-    * 19.2. [Why localhost fails on Windows](#why-localhost-fails-on-windows)
-        * 19.2.1. [Fix (Podman rootless)](#fix-podman-rootless)
-        * 19.2.2. [Fix (Docker Desktop > 4.19)](#fix-docker-desktop--419)
-* 20. [Contributing](#contributing)
-* 21. [Changelog](#changelog)
-* 22. [License](#license)
-* 23. [Core Authors and Maintainers](#core-authors-and-maintainers)
-* 24. [Star History and Project Activity](#star-history-and-project-activity)
+* 9. [🔄 Upgrading to v0.7.0](#-upgrading-to-v070)
+* 10. [Configuration (`.env` or env vars)](#configuration-env-or-env-vars)
+    * 10.1. [Basic](#basic)
+    * 10.2. [Authentication](#authentication)
+    * 10.3. [A2A (Agent-to-Agent) Features](#a2a-agent-to-agent-features)
+    * 10.4. [Email-Based Authentication & User Management](#email-based-authentication--user-management)
+    * 10.5. [MCP Client Authentication](#mcp-client-authentication)
+    * 10.6. [SSO (Single Sign-On) Configuration](#sso-single-sign-on-configuration)
+    * 10.7. [Dynamic Client Registration & Virtual MCP Server Authentication](#dynamic-client-registration--virtual-mcp-server-authentication)
+    * 10.8. [UI Features](#ui-features)
+    * 10.9. [Security](#security)
+    * 10.10. [Logging](#logging)
+    * 10.11. [Transport](#transport)
+    * 10.12. [Federation](#federation)
+    * 10.13. [Resources](#resources)
+    * 10.14. [Tools](#tools)
+    * 10.15. [Prompts](#prompts)
+    * 10.16. [Health Checks](#health-checks)
+    * 10.17. [Database](#database)
+    * 10.18. [Cache Backend](#cache-backend)
+    * 10.19. [Plugin Configuration](#plugin-configuration)
+    * 10.20. [Development](#development)
+* 11. [Running](#running)
+    * 11.1. [Makefile](#makefile)
+    * 11.2. [Script helper](#script-helper)
+    * 11.3. [Manual (Uvicorn)](#manual-uvicorn)
+* 12. [Authentication examples](#authentication-examples)
+* 13. [☁️ AWS / Azure / OpenShift](#️-aws--azure--openshift)
+* 14. [☁️ IBM Cloud Code Engine Deployment](#️-ibm-cloud-code-engine-deployment)
+    * 14.1. [🔧 Prerequisites](#-prerequisites-1)
+    * 14.2. [📦 Environment Variables](#-environment-variables)
+    * 14.3. [🚀 Make Targets](#-make-targets)
+    * 14.4. [📝 Example Workflow](#-example-workflow)
+* 15. [API Endpoints](#api-endpoints)
+* 16. [Testing](#testing)
+* 17. [Project Structure](#project-structure)
+* 18. [API Documentation](#api-documentation)
+* 19. [Makefile targets](#makefile-targets)
+* 20. [🔍 Troubleshooting](#-troubleshooting)
+    * 20.1. [Diagnose the listener](#diagnose-the-listener)
+    * 20.2. [Why localhost fails on Windows](#why-localhost-fails-on-windows)
+        * 20.2.1. [Fix (Podman rootless)](#fix-podman-rootless)
+        * 20.2.2. [Fix (Docker Desktop > 4.19)](#fix-docker-desktop--419)
+* 21. [Contributing](#contributing)
+* 22. [Changelog](#changelog)
+* 23. [License](#license)
+* 24. [Core Authors and Maintainers](#core-authors-and-maintainers)
+* 25. [Star History and Project Activity](#star-history-and-project-activity)
 
 <!-- vscode-markdown-toc-config
     numbering=true
@@ -116,26 +123,27 @@ ContextForge MCP Gateway is a feature-rich gateway, proxy and MCP Registry that 
 
 ## 🚀 Overview & Goals
 
-**ContextForge MCP Gateway** is a gateway, registry, and proxy that sits in front of any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server or REST API-exposing a unified endpoint for all your AI clients.
-
-**⚠️ Caution**: The current release (0.6.0) is considered alpha / early beta. It is not production-ready and should only be used for local development, testing, or experimentation. Features, APIs, and behaviors are subject to change without notice. **Do not** deploy in production environments without thorough security review, validation and additional security mechanisms.  Many of the features required for secure, large-scale, or multi-tenant production deployments are still on the [project roadmap](https://ibm.github.io/mcp-context-forge/architecture/roadmap/) - which is itself evolving.
+**ContextForge** is a gateway, registry, and proxy that sits in front of any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server, A2A server or REST API-exposing a unified endpoint for all your AI clients. See the [project roadmap](https://ibm.github.io/mcp-context-forge/architecture/roadmap/) for more details.
 
 It currently supports:
 
 * Federation across multiple MCP and REST services
 * **A2A (Agent-to-Agent) integration** for external AI agents (OpenAI, Anthropic, custom)
+* **gRPC-to-MCP translation** via automatic reflection-based service discovery
 * Virtualization of legacy APIs as MCP-compliant tools and servers
 * Transport over HTTP, JSON-RPC, WebSocket, SSE (with configurable keepalive), stdio and streamable-HTTP
 * An Admin UI for real-time management, configuration, and log monitoring
-* Built-in auth, retries, and rate-limiting
+* Built-in auth, retries, and rate-limiting with user-scoped OAuth tokens and unconditional X-Upstream-Authorization header support
 * **OpenTelemetry observability** with Phoenix, Jaeger, Zipkin, and other OTLP backends
 * Scalable deployments via Docker or PyPI, Redis-backed caching, and multi-cluster federation
 
 ![MCP Gateway Architecture](https://ibm.github.io/mcp-context-forge/images/mcpgateway.svg)
 
-For a list of upcoming features, check out the [ContextForge MCP Gateway Roadmap](https://ibm.github.io/mcp-context-forge/architecture/roadmap/)
+For a list of upcoming features, check out the [ContextForge Roadmap](https://ibm.github.io/mcp-context-forge/architecture/roadmap/)
 
-**⚠️ Important**: MCP Gateway is not a standalone product - it is an open source component with **NO OFFICIAL SUPPORT** from IBM or its affiliates that can be integrated into your own solution architecture. If you choose to use it, you are responsible for evaluating its fit, securing the deployment, and managing its lifecycle. See [SECURITY.md](./SECURITY.md) for more details.
+> Note on Multi‑Tenancy (v0.7.0): A comprehensive multi‑tenant architecture with email authentication, teams, RBAC, and resource visibility is available since v0.7.0. If upgrading from an older version, see the [Migration Guide](https://github.com/IBM/mcp-context-forge/blob/main/MIGRATION-0.7.0.md) and [Changelog](https://github.com/IBM/mcp-context-forge/blob/main/CHANGELOG.md) for details.
+
+**⚠️ Important**: See [SECURITY.md](./SECURITY.md) for more details.
 
 ---
 
@@ -162,6 +170,8 @@ For a list of upcoming features, check out the [ContextForge MCP Gateway Roadmap
 
 * Wraps non-MCP services as virtual MCP servers
 * Registers tools, prompts, and resources with minimal configuration
+* **gRPC-to-MCP translation** via server reflection protocol
+* Automatic service discovery and method introspection
 
 </details>
 
@@ -229,7 +239,7 @@ See [Observability Documentation](https://ibm.github.io/mcp-context-forge/manage
 
 ## Quick Start - PyPI
 
-MCP Gateway is published on [PyPI](https://pypi.org/project/mcp-contextforge-gateway/) as `mcp-contextforge-gateway`.
+ContextForge is published on [PyPI](https://pypi.org/project/mcp-contextforge-gateway/) as `mcp-contextforge-gateway`.
 
 ---
 
@@ -237,9 +247,18 @@ MCP Gateway is published on [PyPI](https://pypi.org/project/mcp-contextforge-gat
 (single command using [uv](https://docs.astral.sh/uv/))
 
 ```bash
+# Quick start with environment variables
 BASIC_AUTH_PASSWORD=pass \
 MCPGATEWAY_UI_ENABLED=true \
 MCPGATEWAY_ADMIN_API_ENABLED=true \
+PLATFORM_ADMIN_EMAIL=admin@example.com \
+PLATFORM_ADMIN_PASSWORD=changeme \
+PLATFORM_ADMIN_FULL_NAME="Platform Administrator" \
+uvx --from mcp-contextforge-gateway mcpgateway --host 0.0.0.0 --port 4444
+
+# Or better: use the provided .env.example
+cp .env.example .env
+# Edit .env to customize your settings
 uvx --from mcp-contextforge-gateway mcpgateway --host 0.0.0.0 --port 4444
 ```
 
@@ -260,17 +279,25 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install --upgrade pip
 pip install mcp-contextforge-gateway
 
-# 2️⃣  Launch on all interfaces with custom creds & secret key
-# Enable the Admin API endpoints (true/false) - disabled by default
+# 2️⃣  Copy and customize the configuration
+# Download the example environment file
+curl -O https://raw.githubusercontent.com/IBM/mcp-context-forge/main/.env.example
+cp .env.example .env
+# Edit .env to customize your settings (especially passwords!)
+
+# Or set environment variables directly:
 export MCPGATEWAY_UI_ENABLED=true
 export MCPGATEWAY_ADMIN_API_ENABLED=true
+export PLATFORM_ADMIN_EMAIL=admin@example.com
+export PLATFORM_ADMIN_PASSWORD=changeme
+export PLATFORM_ADMIN_FULL_NAME="Platform Administrator"
 
 BASIC_AUTH_PASSWORD=pass JWT_SECRET_KEY=my-test-key \
   mcpgateway --host 0.0.0.0 --port 4444 &   # admin/pass
 
 # 3️⃣  Generate a bearer token & smoke-test the API
 export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token \
-    --username admin --exp 10080 --secret my-test-key)
+    --username admin@example.com --exp 10080 --secret my-test-key)
 
 curl -s -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" \
      http://127.0.0.1:4444/version | jq
@@ -286,11 +313,20 @@ python3 -m venv .venv ; .\.venv\Scripts\Activate.ps1
 pip install --upgrade pip
 pip install mcp-contextforge-gateway
 
-# 2️⃣  Environment variables (session-only)
+# 2️⃣  Copy and customize the configuration
+# Download the example environment file
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/IBM/mcp-context-forge/main/.env.example" -OutFile ".env.example"
+Copy-Item .env.example .env
+# Edit .env to customize your settings
+
+# Or set environment variables (session-only)
 $Env:MCPGATEWAY_UI_ENABLED        = "true"
 $Env:MCPGATEWAY_ADMIN_API_ENABLED = "true"
 $Env:BASIC_AUTH_PASSWORD          = "changeme"      # admin/changeme
 $Env:JWT_SECRET_KEY               = "my-test-key"
+$Env:PLATFORM_ADMIN_EMAIL         = "admin@example.com"
+$Env:PLATFORM_ADMIN_PASSWORD      = "changeme"
+$Env:PLATFORM_ADMIN_FULL_NAME     = "Platform Administrator"
 
 # 3️⃣  Launch the gateway
 mcpgateway.exe --host 0.0.0.0 --port 4444
@@ -300,7 +336,7 @@ mcpgateway.exe --host 0.0.0.0 --port 4444
 
 # 4️⃣  Bearer token and smoke-test
 $Env:MCPGATEWAY_BEARER_TOKEN = python3 -m mcpgateway.utils.create_jwt_token `
-    --username admin --exp 10080 --secret my-test-key
+    --username admin@example.com --exp 10080 --secret my-test-key
 
 curl -s -H "Authorization: Bearer $Env:MCPGATEWAY_BEARER_TOKEN" `
      http://127.0.0.1:4444/version | jq
@@ -311,7 +347,7 @@ curl -s -H "Authorization: Bearer $Env:MCPGATEWAY_BEARER_TOKEN" `
 <details>
 <summary><strong>More configuration</strong></summary>
 
-Copy [.env.example](.env.example) to `.env` and tweak any of the settings (or use them as env variables).
+Copy [.env.example](https://github.com/IBM/mcp-context-forge/blob/main/.env.example) to `.env` and tweak any of the settings (or use them as env variables).
 
 </details>
 
@@ -321,7 +357,7 @@ Copy [.env.example](.env.example) to `.env` and tweak any of the settings (or us
 ```bash
 # 1️⃣  Spin up the sample GO MCP time server using mcpgateway.translate & docker
 python3 -m mcpgateway.translate \
-     --stdio "docker run --rm -i -p 8888:8080 ghcr.io/ibm/fast-time-server:latest -transport=stdio" \
+     --stdio "docker run --rm -i ghcr.io/ibm/fast-time-server:latest -transport=stdio" \
      --expose-sse \
      --port 8003
 
@@ -344,7 +380,7 @@ python3 -m mcpgateway.translate \
 # 2️⃣  Register it with the gateway
 curl -s -X POST -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"name":"fast_time","url":"http://localhost:9000/sse"}' \
+     -d '{"name":"fast_time","url":"http://localhost:8003/sse"}' \
      http://localhost:4444/gateways
 
 # 3️⃣  Verify tool catalog
@@ -376,7 +412,7 @@ npx -y @modelcontextprotocol/inspector
 <summary><strong>🖧 Using the stdio wrapper (mcpgateway-wrapper)</strong></summary>
 
 ```bash
-export MCP_AUTH=$MCPGATEWAY_BEARER_TOKEN
+export MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}"
 export MCP_SERVER_URL=http://localhost:4444/servers/UUID_OF_SERVER_1/mcp
 python3 -m mcpgateway.wrapper  # Ctrl-C to exit
 ```
@@ -388,7 +424,7 @@ In MCP Inspector, define `MCP_AUTH` and `MCP_SERVER_URL` env variables, and sele
 ```bash
 echo $PWD/.venv/bin/python3 # Using the Python3 full path ensures you have a working venv
 export MCP_SERVER_URL='http://localhost:4444/servers/UUID_OF_SERVER_1/mcp'
-export MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN}
+export MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}"
 npx -y @modelcontextprotocol/inspector
 ```
 
@@ -411,7 +447,7 @@ When using a MCP Client such as Claude with stdio:
       "command": "python",
       "args": ["-m", "mcpgateway.wrapper"],
       "env": {
-        "MCP_AUTH": "your-token-here",
+        "MCP_AUTH": "Bearer your-token-here",
         "MCP_SERVER_URL": "http://localhost:4444/servers/UUID_OF_SERVER_1",
         "MCP_TOOL_CALL_TIMEOUT": "120"
       }
@@ -427,6 +463,7 @@ When using a MCP Client such as Claude with stdio:
 ## Quick Start - Containers
 
 Use the official OCI image from GHCR with **Docker** *or* **Podman**.
+Please note: Currently, arm64 is not supported. If you are e.g. running on MacOS, install via PyPi.
 
 ---
 
@@ -444,15 +481,21 @@ docker run -d --name mcpgateway \
   -e BASIC_AUTH_USER=admin \
   -e BASIC_AUTH_PASSWORD=changeme \
   -e AUTH_REQUIRED=true \
+  -e PLATFORM_ADMIN_EMAIL=admin@example.com \
+  -e PLATFORM_ADMIN_PASSWORD=changeme \
+  -e PLATFORM_ADMIN_FULL_NAME="Platform Administrator" \
   -e DATABASE_URL=sqlite:///./mcp.db \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  -e SECURE_COOKIES=false \
+  ghcr.io/ibm/mcp-context-forge:0.9.0
+
+# Note: when not running over SSL, use SECURE_COOKIES=false to prevent the browser denying access.
 
 # Tail logs (Ctrl+C to quit)
 docker logs -f mcpgateway
 
 # Generating an API key
-docker run --rm -it ghcr.io/ibm/mcp-context-forge:0.6.0 \
-  python3 -m mcpgateway.utils.create_jwt_token --username admin --exp 0 --secret my-test-key
+docker run --rm -it ghcr.io/ibm/mcp-context-forge:0.9.0 \
+  python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 0 --secret my-test-key
 ```
 
 Browse to **[http://localhost:4444/admin](http://localhost:4444/admin)** (user `admin` / pass `changeme`).
@@ -479,7 +522,10 @@ docker run -d --name mcpgateway \
   -e JWT_SECRET_KEY=my-test-key \
   -e BASIC_AUTH_USER=admin \
   -e BASIC_AUTH_PASSWORD=changeme \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  -e PLATFORM_ADMIN_EMAIL=admin@example.com \
+  -e PLATFORM_ADMIN_PASSWORD=changeme \
+  -e PLATFORM_ADMIN_FULL_NAME="Platform Administrator" \
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 ```
 
 SQLite now lives on the host at `./data/mcp.db`.
@@ -502,8 +548,11 @@ docker run -d --name mcpgateway \
   -e HOST=0.0.0.0 \
   -e PORT=4444 \
   -e DATABASE_URL=sqlite:////data/mcp.db \
+  -e PLATFORM_ADMIN_EMAIL=admin@example.com \
+  -e PLATFORM_ADMIN_PASSWORD=changeme \
+  -e PLATFORM_ADMIN_FULL_NAME="Platform Administrator" \
   -v $(pwd)/data:/data \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 ```
 
 Using `--network=host` allows Docker to access the local network, allowing you to add MCP servers running on your host. See [Docker Host network driver documentation](https://docs.docker.com/engine/network/drivers/host/) for more details.
@@ -519,7 +568,7 @@ podman run -d --name mcpgateway \
   -p 4444:4444 \
   -e HOST=0.0.0.0 \
   -e DATABASE_URL=sqlite:///./mcp.db \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 ```
 
 #### 2 - Persist SQLite
@@ -538,7 +587,7 @@ podman run -d --name mcpgateway \
   -p 4444:4444 \
   -v $(pwd)/data:/data \
   -e DATABASE_URL=sqlite:////data/mcp.db \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 ```
 
 #### 3 - Host networking (rootless)
@@ -556,7 +605,7 @@ podman run -d --name mcpgateway \
   --network=host \
   -v $(pwd)/data:/data \
   -e DATABASE_URL=sqlite:////data/mcp.db \
-  ghcr.io/ibm/mcp-context-forge:0.6.0
+  ghcr.io/ibm/mcp-context-forge:0.9.0
 ```
 
 ---
@@ -564,12 +613,12 @@ podman run -d --name mcpgateway \
 <details>
 <summary><strong>✏️ Docker/Podman tips</strong></summary>
 
-* **.env files** - Put all the `-e FOO=` lines into a file and replace them with `--env-file .env`. See the provided [.env.example](.env.example) for reference.
-* **Pinned tags** - Use an explicit version (e.g. `v0.6.0`) instead of `latest` for reproducible builds.
+* **.env files** - Put all the `-e FOO=` lines into a file and replace them with `--env-file .env`. See the provided [.env.example](https://github.com/IBM/mcp-context-forge/blob/main/.env.example) for reference.
+* **Pinned tags** - Use an explicit version (e.g. `v0.9.0`) instead of `latest` for reproducible builds.
 * **JWT tokens** - Generate one in the running container:
 
   ```bash
-  docker exec mcpgateway python3 -m mcpgateway.utils.create_jwt_token -u admin -e 10080 --secret my-test-key
+  docker exec mcpgateway python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 10080 --secret my-test-key
   ```
 * **Upgrades** - Stop, remove, and rerun with the same `-v $(pwd)/data:/data` mount; your DB and config stay intact.
 
@@ -600,18 +649,18 @@ The `mcpgateway.wrapper` lets you connect to the gateway over **stdio** while ke
 
 ```bash
 # Set environment variables
-export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin --exp 10080 --secret my-test-key)
-export MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN}
+export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 10080 --secret my-test-key)
+export MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}"
 export MCP_SERVER_URL='http://localhost:4444/servers/UUID_OF_SERVER_1/mcp'
 export MCP_TOOL_CALL_TIMEOUT=120
 export MCP_WRAPPER_LOG_LEVEL=DEBUG  # or OFF to disable logging
 
 docker run --rm -i \
-  -e MCP_AUTH=$MCPGATEWAY_BEARER_TOKEN \
+  -e MCP_AUTH=$MCP_AUTH \
   -e MCP_SERVER_URL=http://host.docker.internal:4444/servers/UUID_OF_SERVER_1/mcp \
   -e MCP_TOOL_CALL_TIMEOUT=120 \
   -e MCP_WRAPPER_LOG_LEVEL=DEBUG \
-  ghcr.io/ibm/mcp-context-forge:0.6.0 \
+  ghcr.io/ibm/mcp-context-forge:0.9.0 \
   python3 -m mcpgateway.wrapper
 ```
 
@@ -625,7 +674,7 @@ Because the wrapper speaks JSON-RPC over stdin/stdout, you can interact with it 
 
 ```bash
 # Start the MCP Gateway Wrapper
-export MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN}
+export MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}"
 export MCP_SERVER_URL=http://localhost:4444/servers/YOUR_SERVER_UUID
 python3 -m mcpgateway.wrapper
 ```
@@ -659,7 +708,7 @@ python3 -m mcpgateway.wrapper
 <summary><strong>Expected responses from mcpgateway.wrapper</strong></summary>
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{},"prompts":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"mcpgateway-wrapper","version":"0.6.0"}}}
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{},"prompts":{"listChanged":false},"resources":{"subscribe":false,"listChanged":false},"tools":{"listChanged":false}},"serverInfo":{"name":"mcpgateway-wrapper","version":"0.9.0"}}}
 
 # When there's no tools
 {"jsonrpc":"2.0","id":2,"result":{"tools":[]}}
@@ -686,12 +735,14 @@ The `mcpgateway.wrapper` exposes everything your Gateway knows about over **stdi
 <summary><strong>🐳 Docker / Podman</strong></summary>
 
 ```bash
+export MCP_AUTH="Bearer $MCPGATEWAY_BEARER_TOKEN"
+
 docker run -i --rm \
   --network=host \
   -e MCP_SERVER_URL=http://localhost:4444/servers/UUID_OF_SERVER_1/mcp \
-  -e MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN} \
+  -e MCP_AUTH=${MCP_AUTH} \
   -e MCP_TOOL_CALL_TIMEOUT=120 \
-  ghcr.io/ibm/mcp-context-forge:0.6.0 \
+  ghcr.io/ibm/mcp-context-forge:0.9.0 \
   python3 -m mcpgateway.wrapper
 ```
 
@@ -707,7 +758,7 @@ docker run -i --rm \
 pipx install --include-deps mcp-contextforge-gateway
 
 # Run the stdio wrapper
-MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN} \
+MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}" \
 MCP_SERVER_URL=http://localhost:4444/servers/UUID_OF_SERVER_1/mcp \
 python3 -m mcpgateway.wrapper
 # Alternatively with uv
@@ -723,7 +774,7 @@ uv run --directory . -m mcpgateway.wrapper
       "command": "python3",
       "args": ["-m", "mcpgateway.wrapper"],
       "env": {
-        "MCP_AUTH": "<your-token>",
+        "MCP_AUTH": "Bearer <your-token>",
         "MCP_SERVER_URL": "http://localhost:4444/servers/UUID_OF_SERVER_1/mcp",
         "MCP_TOOL_CALL_TIMEOUT": "120"
       }
@@ -760,7 +811,7 @@ source ~/.venv/mcpgateway/bin/activate
 uv pip install mcp-contextforge-gateway
 
 # Launch wrapper
-MCP_AUTH=${MCPGATEWAY_BEARER_TOKEN} \
+MCP_AUTH="Bearer ${MCPGATEWAY_BEARER_TOKEN}" \
 MCP_SERVER_URL=http://localhost:4444/servers/UUID_OF_SERVER_1/mcp \
 uv run --directory . -m mcpgateway.wrapper # Use this just for testing, as the Client will run the uv command
 ```
@@ -780,7 +831,7 @@ uv run --directory . -m mcpgateway.wrapper # Use this just for testing, as the C
         "mcpgateway.wrapper"
       ],
       "env": {
-        "MCP_AUTH": "<your-token>",
+        "MCP_AUTH": "Bearer <your-token>",
         "MCP_SERVER_URL": "http://localhost:4444/servers/UUID_OF_SERVER_1/mcp"
     }
   }
@@ -990,40 +1041,91 @@ A `make compose-up` target is provided along with a [docker-compose.yml](docker-
 
 ---
 
+## 🔄 Upgrading to v0.7.0
+
+> **⚠️ CRITICAL**: Version 0.7.0 introduces comprehensive multi-tenancy and requires database migration.
+
+### Backup Your Data First
+Before upgrading to v0.7.0, **always** backup your database, environment configuration, and export your settings:
+
+```bash
+# Backup database (SQLite example)
+cp mcp.db mcp.db.backup.$(date +%Y%m%d_%H%M%S)
+
+# Backup existing .env file
+cp .env .env.bak
+
+# Export configuration via Admin UI or API
+curl -u admin:changeme "http://localhost:4444/admin/export/configuration" \
+     -o config_backup_$(date +%Y%m%d_%H%M%S).json
+```
+
+### Migration Process
+1. **Update `.env`** - Copy new settings: `cp .env.example .env` then configure `PLATFORM_ADMIN_EMAIL` and other required multi-tenancy settings
+2. **Run migration** - Database schema updates automatically: `python3 -m mcpgateway.bootstrap_db`
+3. **Verify migration** - Use verification script: `python3 scripts/verify_multitenancy_0_7_0_migration.py`
+
+### If Migration Fails
+If the database migration fails or you encounter issues:
+1. **Restore database backup**: `cp mcp.db.backup.YYYYMMDD_HHMMSS mcp.db`
+2. **Restore .env backup**: `cp .env.bak .env`
+3. **Delete corrupted database**: `rm mcp.db` (if migration partially completed)
+4. **Restore configuration**: Import your exported configuration via Admin UI
+
+### Complete Migration Guide
+For detailed upgrade instructions, troubleshooting, and rollback procedures, see:
+- **📖 [MIGRATION-0.7.0.md](MIGRATION-0.7.0.md)** - Complete step-by-step upgrade guide
+- **🏗️ [Multi-tenancy Architecture](https://ibm.github.io/mcp-context-forge/architecture/multitenancy/)** - Understanding the new system
+
+---
+
 ## Configuration (`.env` or env vars)
 
 > ⚠️ If any required `.env` variable is missing or invalid, the gateway will fail fast at startup with a validation error via Pydantic.
 
-You can get started by copying the provided [.env.example](.env.example) to `.env` and making the necessary edits to fit your environment.
+You can get started by copying the provided [.env.example](https://github.com/IBM/mcp-context-forge/blob/main/.env.example) to `.env` and making the necessary edits to fit your environment.
 
 <details>
 <summary><strong>🔧 Environment Configuration Variables</strong></summary>
 
 ### Basic
 
-| Setting         | Description                              | Default                | Options                |
-| --------------- | ---------------------------------------- | ---------------------- | ---------------------- |
-| `APP_NAME`      | Gateway / OpenAPI title                  | `MCP Gateway`          | string                 |
-| `HOST`          | Bind address for the app                 | `127.0.0.1`            | IPv4/IPv6              |
-| `PORT`          | Port the server listens on               | `4444`                 | 1-65535                |
-| `DATABASE_URL`  | SQLAlchemy connection URL                | `sqlite:///./mcp.db`   | any SQLAlchemy dialect |
-| `APP_ROOT_PATH` | Subpath prefix for app (e.g. `/gateway`) | (empty)                | string                 |
-| `TEMPLATES_DIR` | Path to Jinja2 templates                 | `mcpgateway/templates` | path                   |
-| `STATIC_DIR`    | Path to static files                     | `mcpgateway/static`    | path                   |
+| Setting            | Description                              | Default                | Options                |
+|--------------------|------------------------------------------|------------------------|------------------------|
+| `APP_NAME`         | Gateway / OpenAPI title                  | `MCP Gateway`          | string                 |
+| `HOST`             | Bind address for the app                 | `127.0.0.1`            | IPv4/IPv6              |
+| `PORT`             | Port the server listens on               | `4444`                 | 1-65535                |
+| `DATABASE_URL`     | SQLAlchemy connection URL                | `sqlite:///./mcp.db`   | any SQLAlchemy dialect |
+| `APP_ROOT_PATH`    | Subpath prefix for app (e.g. `/gateway`) | (empty)                | string                 |
+| `TEMPLATES_DIR`    | Path to Jinja2 templates                 | `mcpgateway/templates` | path                   |
+| `STATIC_DIR`       | Path to static files                     | `mcpgateway/static`    | path                   |
+| `PROTOCOL_VERSION` | MCP protocol version supported           | `2025-03-26`           | string                 |
+| `FORGE_CONTENT_TYPE` | Content-Type for outgoing requests to Forge | `application/json`  | `application/json`, `application/x-www-form-urlencoded` |
 
 > 💡 Use `APP_ROOT_PATH=/foo` if reverse-proxying under a subpath like `https://host.com/foo/`.
+> 🔄 Use `FORGE_CONTENT_TYPE=application/x-www-form-urlencoded` to send URL-encoded form data instead of JSON.
 
 ### Authentication
 
-| Setting               | Description                                                      | Default       | Options    |
-| --------------------- | ---------------------------------------------------------------- | ------------- | ---------- |
-| `BASIC_AUTH_USER`     | Username for Admin UI login and HTTP Basic authentication        | `admin`       | string     |
-| `BASIC_AUTH_PASSWORD` | Password for Admin UI login and HTTP Basic authentication        | `changeme`    | string     |
-| `AUTH_REQUIRED`       | Require authentication for all API routes                        | `true`        | bool       |
-| `JWT_SECRET_KEY`      | Secret key used to **sign JWT tokens** for API access            | `my-test-key` | string     |
-| `JWT_ALGORITHM`       | Algorithm used to sign the JWTs (`HS256` is default, HMAC-based) | `HS256`       | PyJWT algs |
-| `TOKEN_EXPIRY`        | Expiry of generated JWTs in minutes                              | `10080`       | int > 0    |
-| `AUTH_ENCRYPTION_SECRET` | Passphrase used to derive AES key for encrypting tool auth headers | `my-test-salt` | string |
+| Setting                     | Description                                                                  | Default             | Options     |
+|-----------------------------|------------------------------------------------------------------------------|---------------------|-------------|
+| `BASIC_AUTH_USER`           | Username for Admin UI login and HTTP Basic authentication                    | `admin`             | string      |
+| `BASIC_AUTH_PASSWORD`       | Password for Admin UI login and HTTP Basic authentication                    | `changeme`          | string      |
+| `PLATFORM_ADMIN_EMAIL`      | Email for bootstrap platform admin user (auto-created with admin privileges) | `admin@example.com` | string      |
+| `AUTH_REQUIRED`             | Require authentication for all API routes                                    | `true`              | bool        |
+| `JWT_ALGORITHM`             | Algorithm used to sign the JWTs (`HS256` is default, HMAC-based)             | `HS256`             | PyJWT algs  |
+| `JWT_SECRET_KEY`            | Secret key used to **sign JWT tokens** for API access                        | `my-test-key`       | string      |
+| `JWT_PUBLIC_KEY_PATH`       | If an asymmetric algorithm is used, a public key is required                 | (empty)             | path to pem |
+| `JWT_PRIVATE_KEY_PATH`      | If an asymmetric algorithm is used, a private key is required                | (empty)             | path to pem |
+| `JWT_AUDIENCE`              | JWT audience claim for token validation                                      | `mcpgateway-api`    | string      |
+| `JWT_AUDIENCE_VERIFICATION` | Disables jwt audience verification (useful for DCR)                          | `true`              | boolean     |
+| `JWT_ISSUER`                | JWT issuer claim for token validation                                        | `mcpgateway`        | string      |
+| `TOKEN_EXPIRY`              | Expiry of generated JWTs in minutes                                          | `10080`             | int > 0     |
+| `REQUIRE_TOKEN_EXPIRATION`  | Require all JWT tokens to have expiration claims                             | `false`             | bool        |
+| `AUTH_ENCRYPTION_SECRET`    | Passphrase used to derive AES key for encrypting tool auth headers           | `my-test-salt`      | string      |
+| `OAUTH_REQUEST_TIMEOUT`     | OAuth request timeout in seconds                                             | `30`                | int > 0     |
+| `OAUTH_MAX_RETRIES`         | Maximum retries for OAuth token requests                                     | `3`                 | int > 0     |
+| `OAUTH_DEFAULT_TIMEOUT`         | Default OAuth token timeout in seconds                                     | `3600`                 | int > 0     |
 
 > 🔐 `BASIC_AUTH_USER`/`PASSWORD` are used for:
 >
@@ -1036,7 +1138,7 @@ You can get started by copying the provided [.env.example](.env.example) to `.en
 > * Generate tokens via:
 >
 >   ```bash
->   export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin --exp 0 --secret my-test-key)
+>   export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 0 --secret my-test-key)
 >   echo $MCPGATEWAY_BEARER_TOKEN
 >   ```
 > * Tokens allow non-interactive API clients to authenticate securely.
@@ -1055,9 +1157,14 @@ You can get started by copying the provided [.env.example](.env.example) to `.en
 | `MCPGATEWAY_UI_ENABLED`        | Enable the interactive Admin dashboard | `false` | bool    |
 | `MCPGATEWAY_ADMIN_API_ENABLED` | Enable API endpoints for admin ops     | `false` | bool    |
 | `MCPGATEWAY_BULK_IMPORT_ENABLED` | Enable bulk import endpoint for tools | `true`  | bool    |
+| `MCPGATEWAY_BULK_IMPORT_MAX_TOOLS` | Maximum number of tools per bulk import request | `200` | int |
+| `MCPGATEWAY_BULK_IMPORT_RATE_LIMIT` | Rate limit for bulk import endpoint (requests per minute) | `10` | int |
+| `MCPGATEWAY_UI_TOOL_TEST_TIMEOUT` | Tool test timeout in milliseconds for the admin UI | `60000` | int |
+| `MCPCONTEXT_UI_ENABLED`        | Enable ContextForge UI features        | `true`  | bool    |
 
 > 🖥️ Set both UI and Admin API to `false` to disable management UI and APIs in production.
 > 📥 The bulk import endpoint allows importing up to 200 tools in a single request via `/admin/tools/import`.
+> ⏱️ Increase `MCPGATEWAY_UI_TOOL_TEST_TIMEOUT` if your tools make multiple API calls or operate in high-latency environments.
 
 ### A2A (Agent-to-Agent) Features
 
@@ -1078,6 +1185,285 @@ You can get started by copying the provided [.env.example](.env.example) to `.en
 - `MCPGATEWAY_A2A_ENABLED=false`: Completely disables A2A features (API endpoints return 404, admin tab hidden)
 - `MCPGATEWAY_A2A_METRICS_ENABLED=false`: Disables metrics collection while keeping functionality
 
+### LLM Chat MCP Client
+
+The LLM Chat MCP Client allows you to interact with MCP servers using conversational AI from multiple LLM providers. This feature enables natural language interaction with tools, resources, and prompts exposed by MCP servers.
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `LLMCHAT_ENABLED`             | Enable LLM Chat functionality          | `false` | bool    |
+| `LLM_PROVIDER`                | LLM provider selection                 | `azure_openai` | `azure_openai`, `openai`, `anthropic`, `aws_bedrock`, `ollama` |
+
+**Azure OpenAI Configuration:**
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `AZURE_OPENAI_ENDPOINT`       | Azure OpenAI endpoint URL              | (none)  | string  |
+| `AZURE_OPENAI_API_KEY`        | Azure OpenAI API key                   | (none)  | string  |
+| `AZURE_OPENAI_DEPLOYMENT`     | Azure OpenAI deployment name           | (none)  | string  |
+| `AZURE_OPENAI_API_VERSION`    | Azure OpenAI API version               | `2024-02-15-preview` | string |
+| `AZURE_OPENAI_TEMPERATURE`    | Sampling temperature                   | `0.7`   | float (0.0-2.0) |
+| `AZURE_OPENAI_MAX_TOKENS`     | Maximum tokens to generate             | (none)  | int     |
+
+**OpenAI Configuration:**
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `OPENAI_API_KEY`              | OpenAI API key                         | (none)  | string  |
+| `OPENAI_MODEL`                | OpenAI model name                      | `gpt-4o-mini` | string |
+| `OPENAI_BASE_URL`             | Base URL for OpenAI-compatible endpoints | (none) | string  |
+| `OPENAI_TEMPERATURE`          | Sampling temperature                   | `0.7`   | float (0.0-2.0) |
+| `OPENAI_MAX_RETRIES`          | Maximum number of retries              | `2`     | int     |
+
+**Anthropic Claude Configuration:**
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `ANTHROPIC_API_KEY`           | Anthropic API key                      | (none)  | string  |
+| `ANTHROPIC_MODEL`             | Claude model name                      | `claude-3-5-sonnet-20241022` | string |
+| `ANTHROPIC_TEMPERATURE`       | Sampling temperature                   | `0.7`   | float (0.0-1.0) |
+| `ANTHROPIC_MAX_TOKENS`        | Maximum tokens to generate             | `4096`  | int     |
+| `ANTHROPIC_MAX_RETRIES`       | Maximum number of retries              | `2`     | int     |
+
+**AWS Bedrock Configuration:**
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `AWS_BEDROCK_MODEL_ID`        | Bedrock model ID                       | (none)  | string  |
+| `AWS_BEDROCK_REGION`          | AWS region name                        | `us-east-1` | string |
+| `AWS_BEDROCK_TEMPERATURE`     | Sampling temperature                   | `0.7`   | float (0.0-1.0) |
+| `AWS_BEDROCK_MAX_TOKENS`      | Maximum tokens to generate             | `4096`  | int     |
+| `AWS_ACCESS_KEY_ID`           | AWS access key ID (optional)           | (none)  | string  |
+| `AWS_SECRET_ACCESS_KEY`       | AWS secret access key (optional)       | (none)  | string  |
+| `AWS_SESSION_TOKEN`           | AWS session token (optional)           | (none)  | string  |
+
+
+**IBM WatsonX AI**
+| Setting                 | Description                     | Default                        | Options         |
+| ----------------------- | --------------------------------| ------------------------------ | ----------------|
+| `WATSONX_URL`           | watsonx url                     | (none)                         | string          |
+| `WATSONX_APIKEY`        | API key                         | (none)                         | string          |
+| `WATSONX_PROJECT_ID`    | Project Id for WatsonX          | (none)                         | string          |
+| `WATSONX_MODEL_ID`      | Watsonx model id                | `ibm/granite-13b-chat-v2`      | string          |
+| `WATSONX_TEMPERATURE`   | temperature (optional)          | `0.7`                          | float (0.0-1.0) |
+
+
+**Ollama Configuration:**
+
+| Setting                        | Description                            | Default | Options |
+| ------------------------------ | -------------------------------------- | ------- | ------- |
+| `OLLAMA_BASE_URL`             | Ollama base URL                        | `http://localhost:11434` | string |
+| `OLLAMA_MODEL`                | Ollama model name                      | `llama3.2` | string |
+| `OLLAMA_TEMPERATURE`          | Sampling temperature                   | `0.7`   | float (0.0-2.0) |
+
+> 🤖 **LLM Chat Integration**: Chat with MCP servers using natural language powered by Azure OpenAI, OpenAI, Anthropic Claude, AWS Bedrock, or Ollama
+> 🔧 **Flexible Providers**: Switch between different LLM providers without changing your MCP integration
+> 🔒 **Security**: API keys and credentials are securely stored and never exposed in responses
+> 🎛️ **Admin UI**: Dedicated LLM Chat tab in the admin interface for interactive conversations
+
+**LLM Chat Configuration Effects:**
+- `LLMCHAT_ENABLED=false` (default): Completely disables LLM Chat features (API endpoints return 404, admin tab hidden)
+- `LLMCHAT_ENABLED=true`: Enables LLM Chat functionality with the selected provider
+
+**Provider Requirements:**
+- **Azure OpenAI**: Requires `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_DEPLOYMENT`
+- **OpenAI**: Requires `OPENAI_API_KEY`
+- **Anthropic**: Requires `ANTHROPIC_API_KEY` and `pip install langchain-anthropic`
+- **AWS Bedrock**: Requires `AWS_BEDROCK_MODEL_ID` and `pip install langchain-aws boto3`. Uses AWS credential chain if explicit credentials not provided.
+**IBM WatsonX AI**: Requires `WATSONX_URL`, `WATSONX_APIKEY`, `WATSONX_PROJECT_ID`, `WATSONX_MODEL_ID` and `pip install langchain-ibm `.
+- **Ollama**: Requires local Ollama instance running (default: `http://localhost:11434`)
+
+**Redis Configurations:** For maintaining Chat Sessions in multi-worker environment
+
+| Setting                              | Description                                | Default | Options |
+| -------------------------------------| -------------------------------------------| ------- | ------- |
+| `LLMCHAT_SESSION_TTL`                | Seconds for active_session key TTL         | `300`   | int     |
+| `LLMCHAT_SESSION_LOCK_TTL`           | Seconds for lock expiry                    | `30`    | int     |
+| `LLMCHAT_SESSION_LOCK_RETRIES`       | How many times to poll while waiting       | `10`    | int     |
+| `LLMCHAT_SESSION_LOCK_WAIT`          | Seconds between polls                      | `0.2`   | float   |
+| `LLMCHAT_CHAT_HISTORY_TTL`           | Seconds for chat history expiry            | `3600`  | int     |
+| `LLMCHAT_CHAT_HISTORY_MAX_MESSAGES`  | Maximum message history to store per user  | `50`    | int     |
+
+**Documentation:**
+- [LLM Chat Guide](https://ibm.github.io/mcp-context-forge/using/clients/llm-chat) - Complete LLM Chat setup and provider configuration
+
+### Email-Based Authentication & User Management
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `EMAIL_AUTH_ENABLED`          | Enable email-based authentication system         | `true`                | bool    |
+| `PLATFORM_ADMIN_EMAIL`        | Email for bootstrap platform admin user          | `admin@example.com`   | string  |
+| `PLATFORM_ADMIN_PASSWORD`     | Password for bootstrap platform admin user       | `changeme`            | string  |
+| `PLATFORM_ADMIN_FULL_NAME`    | Full name for bootstrap platform admin user      | `Platform Administrator` | string |
+| `ARGON2ID_TIME_COST`          | Argon2id time cost (iterations)                  | `3`                   | int > 0 |
+| `ARGON2ID_MEMORY_COST`        | Argon2id memory cost in KiB                      | `65536`               | int > 0 |
+| `ARGON2ID_PARALLELISM`        | Argon2id parallelism (threads)                   | `1`                   | int > 0 |
+| `PASSWORD_MIN_LENGTH`         | Minimum password length                           | `8`                   | int > 0 |
+| `PASSWORD_REQUIRE_UPPERCASE`  | Require uppercase letters in passwords           | `false`               | bool    |
+| `PASSWORD_REQUIRE_LOWERCASE`  | Require lowercase letters in passwords           | `false`               | bool    |
+| `PASSWORD_REQUIRE_NUMBERS`    | Require numbers in passwords                     | `false`               | bool    |
+| `PASSWORD_REQUIRE_SPECIAL`    | Require special characters in passwords          | `false`               | bool    |
+| `MAX_FAILED_LOGIN_ATTEMPTS`   | Maximum failed login attempts before lockout     | `5`                   | int > 0 |
+| `ACCOUNT_LOCKOUT_DURATION_MINUTES` | Account lockout duration in minutes        | `30`                  | int > 0 |
+
+### MCP Client Authentication
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `MCP_CLIENT_AUTH_ENABLED`     | Enable JWT authentication for MCP client operations | `true`            | bool    |
+| `TRUST_PROXY_AUTH`            | Trust proxy authentication headers               | `false`               | bool    |
+| `PROXY_USER_HEADER`           | Header containing authenticated username from proxy | `X-Authenticated-User` | string |
+
+> 🔐 **MCP Client Auth**: When `MCP_CLIENT_AUTH_ENABLED=false`, you must set `TRUST_PROXY_AUTH=true` if using a trusted authentication proxy. This is a security-sensitive setting.
+
+### SSO (Single Sign-On) Configuration
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_ENABLED`                 | Master switch for Single Sign-On authentication  | `false`               | bool    |
+| `SSO_AUTO_CREATE_USERS`       | Automatically create users from SSO providers    | `true`                | bool    |
+| `SSO_TRUSTED_DOMAINS`         | Trusted email domains (JSON array)               | `[]`                  | JSON array |
+| `SSO_PRESERVE_ADMIN_AUTH`     | Preserve local admin authentication when SSO enabled | `true`            | bool    |
+| `SSO_REQUIRE_ADMIN_APPROVAL`  | Require admin approval for new SSO registrations | `false`               | bool    |
+| `SSO_ISSUERS`                 | Optional JSON array of issuer URLs for SSO providers | (none)            | JSON array |
+
+**GitHub OAuth:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_GITHUB_ENABLED`          | Enable GitHub OAuth authentication               | `false`               | bool    |
+| `SSO_GITHUB_CLIENT_ID`        | GitHub OAuth client ID                           | (none)                | string  |
+| `SSO_GITHUB_CLIENT_SECRET`    | GitHub OAuth client secret                       | (none)                | string  |
+| `SSO_GITHUB_ADMIN_ORGS`       | GitHub orgs granting admin privileges (JSON)     | `[]`                  | JSON array |
+
+**Google OAuth:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_GOOGLE_ENABLED`          | Enable Google OAuth authentication               | `false`               | bool    |
+| `SSO_GOOGLE_CLIENT_ID`        | Google OAuth client ID                           | (none)                | string  |
+| `SSO_GOOGLE_CLIENT_SECRET`    | Google OAuth client secret                       | (none)                | string  |
+| `SSO_GOOGLE_ADMIN_DOMAINS`    | Google admin domains (JSON)                      | `[]`                  | JSON array |
+
+**IBM Security Verify OIDC:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_IBM_VERIFY_ENABLED`      | Enable IBM Security Verify OIDC authentication   | `false`               | bool    |
+| `SSO_IBM_VERIFY_CLIENT_ID`    | IBM Security Verify client ID                    | (none)                | string  |
+| `SSO_IBM_VERIFY_CLIENT_SECRET` | IBM Security Verify client secret               | (none)                | string  |
+| `SSO_IBM_VERIFY_ISSUER`       | IBM Security Verify OIDC issuer URL             | (none)                | string  |
+
+**Keycloak OIDC:**
+| Setting                              | Description                                      | Default                    | Options |
+| ------------------------------------ | ------------------------------------------------ | -------------------------- | ------- |
+| `SSO_KEYCLOAK_ENABLED`              | Enable Keycloak OIDC authentication              | `false`                    | bool    |
+| `SSO_KEYCLOAK_BASE_URL`             | Keycloak base URL                                | (none)                     | string  |
+| `SSO_KEYCLOAK_REALM`                | Keycloak realm name                              | `master`                   | string  |
+| `SSO_KEYCLOAK_CLIENT_ID`            | Keycloak client ID                               | (none)                     | string  |
+| `SSO_KEYCLOAK_CLIENT_SECRET`        | Keycloak client secret                           | (none)                     | string  |
+| `SSO_KEYCLOAK_MAP_REALM_ROLES`      | Map Keycloak realm roles to gateway teams        | `true`                     | bool    |
+| `SSO_KEYCLOAK_MAP_CLIENT_ROLES`     | Map Keycloak client roles to gateway RBAC        | `false`                    | bool    |
+| `SSO_KEYCLOAK_USERNAME_CLAIM`       | JWT claim for username                           | `preferred_username`       | string  |
+| `SSO_KEYCLOAK_EMAIL_CLAIM`          | JWT claim for email                              | `email`                    | string  |
+| `SSO_KEYCLOAK_GROUPS_CLAIM`         | JWT claim for groups/roles                       | `groups`                   | string  |
+
+**Microsoft Entra ID OIDC:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_ENTRA_ENABLED`           | Enable Microsoft Entra ID OIDC authentication    | `false`               | bool    |
+| `SSO_ENTRA_CLIENT_ID`         | Microsoft Entra ID client ID                     | (none)                | string  |
+| `SSO_ENTRA_CLIENT_SECRET`     | Microsoft Entra ID client secret                 | (none)                | string  |
+| `SSO_ENTRA_TENANT_ID`         | Microsoft Entra ID tenant ID                     | (none)                | string  |
+
+**Generic OIDC Provider (Auth0, Authentik, etc.):**
+| Setting                              | Description                                      | Default                    | Options |
+| ------------------------------------ | ------------------------------------------------ | -------------------------- | ------- |
+| `SSO_GENERIC_ENABLED`               | Enable generic OIDC provider authentication      | `false`                    | bool    |
+| `SSO_GENERIC_PROVIDER_ID`           | Provider ID (e.g., keycloak, auth0, authentik)   | (none)                     | string  |
+| `SSO_GENERIC_DISPLAY_NAME`          | Display name shown on login page                 | (none)                     | string  |
+| `SSO_GENERIC_CLIENT_ID`             | Generic OIDC client ID                           | (none)                     | string  |
+| `SSO_GENERIC_CLIENT_SECRET`         | Generic OIDC client secret                       | (none)                     | string  |
+| `SSO_GENERIC_AUTHORIZATION_URL`     | Authorization endpoint URL                       | (none)                     | string  |
+| `SSO_GENERIC_TOKEN_URL`             | Token endpoint URL                               | (none)                     | string  |
+| `SSO_GENERIC_USERINFO_URL`          | Userinfo endpoint URL                            | (none)                     | string  |
+| `SSO_GENERIC_ISSUER`                | OIDC issuer URL                                  | (none)                     | string  |
+| `SSO_GENERIC_SCOPE`                 | OAuth scopes (space-separated)                   | `openid profile email`     | string  |
+
+**Okta OIDC:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_OKTA_ENABLED`            | Enable Okta OIDC authentication                  | `false`               | bool    |
+| `SSO_OKTA_CLIENT_ID`          | Okta client ID                                   | (none)                | string  |
+| `SSO_OKTA_CLIENT_SECRET`      | Okta client secret                               | (none)                | string  |
+| `SSO_OKTA_ISSUER`             | Okta issuer URL                                  | (none)                | string  |
+
+**SSO Admin Assignment:**
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `SSO_AUTO_ADMIN_DOMAINS`      | Email domains that automatically get admin privileges | `[]`             | JSON array |
+
+### OAuth 2.0 Dynamic Client Registration (DCR) & PKCE
+
+ContextForge implements **OAuth 2.0 Dynamic Client Registration (RFC 7591)** and **PKCE (RFC 7636)** for seamless integration with OAuth-protected MCP servers and upstream API gateways like HyperMCP.
+
+**Key Features:**
+- ✅ Automatic client registration with Authorization Servers (no manual credential configuration)
+- ✅ Authorization Server metadata discovery (RFC 8414)
+- ✅ PKCE (Proof Key for Code Exchange) enabled for all Authorization Code flows
+- ✅ Support for public clients (PKCE-only, no client secret)
+- ✅ Encrypted credential storage with Fernet encryption
+- ✅ Configurable issuer allowlist for security
+
+| Setting                                     | Description                                                    | Default                        | Options       |
+|--------------------------------------------|----------------------------------------------------------------|--------------------------------|---------------|
+| `DCR_ENABLED`                              | Enable Dynamic Client Registration (RFC 7591)                  | `true`                         | bool          |
+| `DCR_AUTO_REGISTER_ON_MISSING_CREDENTIALS` | Auto-register when gateway has issuer but no client_id         | `true`                         | bool          |
+| `DCR_DEFAULT_SCOPES`                       | Default OAuth scopes to request during DCR                     | `["mcp:read"]`                 | JSON array    |
+| `DCR_ALLOWED_ISSUERS`                      | Allowlist of trusted issuer URLs (empty = allow any)           | `[]`                           | JSON array    |
+| `DCR_TOKEN_ENDPOINT_AUTH_METHOD`           | Token endpoint auth method                                     | `client_secret_basic`          | `client_secret_basic`, `client_secret_post`, `none` |
+| `DCR_METADATA_CACHE_TTL`                   | AS metadata cache TTL in seconds                               | `3600`                         | int           |
+| `DCR_CLIENT_NAME_TEMPLATE`                 | Template for client_name in DCR requests                       | `MCP Gateway ({gateway_name})` | string        |
+| `OAUTH_DISCOVERY_ENABLED`                  | Enable AS metadata discovery (RFC 8414)                        | `true`                         | bool          |
+| `OAUTH_PREFERRED_CODE_CHALLENGE_METHOD`    | PKCE code challenge method                                     | `S256`                         | `S256`, `plain` |
+| `JWT_AUDIENCE_VERIFICATION`                | JWT audience verification (disable for DCR)                    | `true`                         | bool          |
+
+**Documentation:**
+- [DCR Configuration Guide](https://ibm.github.io/mcp-context-forge/manage/dcr/) - Complete DCR setup and troubleshooting
+- [OAuth 2.0 Integration](https://ibm.github.io/mcp-context-forge/manage/oauth/) - OAuth configuration and PKCE details
+- [HyperMCP Tutorial](https://ibm.github.io/mcp-context-forge/tutorials/dcr-hyprmcp/) - End-to-end DCR setup with HyperMCP gateway
+
+### Personal Teams Configuration
+
+| Setting                                  | Description                                      | Default    | Options |
+| ---------------------------------------- | ------------------------------------------------ | ---------- | ------- |
+| `AUTO_CREATE_PERSONAL_TEAMS`             | Enable automatic personal team creation for new users | `true`   | bool    |
+| `PERSONAL_TEAM_PREFIX`                   | Personal team naming prefix                      | `personal` | string  |
+| `MAX_TEAMS_PER_USER`                     | Maximum number of teams a user can belong to    | `50`       | int > 0 |
+| `MAX_MEMBERS_PER_TEAM`                   | Maximum number of members per team               | `100`      | int > 0 |
+| `INVITATION_EXPIRY_DAYS`                 | Number of days before team invitations expire   | `7`        | int > 0 |
+| `REQUIRE_EMAIL_VERIFICATION_FOR_INVITES` | Require email verification for team invitations | `true`     | bool    |
+
+### MCP Server Catalog
+
+> 🆕 **New in v0.7.0**: The MCP Server Catalog allows you to define a catalog of pre-configured MCP servers in a YAML file for easy discovery and management via the Admin UI.
+
+| Setting                              | Description                                      | Default            | Options |
+| ------------------------------------ | ------------------------------------------------ | ------------------ | ------- |
+| `MCPGATEWAY_CATALOG_ENABLED`        | Enable MCP server catalog feature                | `true`             | bool    |
+| `MCPGATEWAY_CATALOG_FILE`           | Path to catalog configuration file               | `mcp-catalog.yml`  | string  |
+| `MCPGATEWAY_CATALOG_AUTO_HEALTH_CHECK` | Automatically health check catalog servers    | `true`             | bool    |
+| `MCPGATEWAY_CATALOG_CACHE_TTL`      | Catalog cache TTL in seconds                     | `3600`             | int > 0 |
+| `MCPGATEWAY_CATALOG_PAGE_SIZE`      | Number of catalog servers per page               | `12`               | int > 0 |
+
+**Key Features:**
+- 🔄 Refresh Button - Manually refresh catalog without page reload
+- 🔍 Debounced Search - Optimized search with 300ms debounce
+- 📝 Custom Server Names - Specify custom names when registering
+- 🔌 Transport Detection - Auto-detect SSE, WebSocket, or HTTP transports
+- 🔐 OAuth Support - Register OAuth servers and configure later
+- ⚡ Better Error Messages - User-friendly errors for common issues
+
+**Documentation:**
+- [MCP Server Catalog Guide](https://ibm.github.io/mcp-context-forge/manage/catalog/) - Complete catalog setup and configuration
+
 ### Security
 
 | Setting                   | Description                    | Default                                        | Options    |
@@ -1092,14 +1478,23 @@ You can get started by copying the provided [.env.example](.env.example) to `.en
 | `COOKIE_SAMESITE`         | Cookie SameSite attribute      | `lax`                                          | `strict`/`lax`/`none` |
 | `SECURITY_HEADERS_ENABLED` | Enable security headers middleware | `true`                                     | bool       |
 | `X_FRAME_OPTIONS`         | X-Frame-Options header value   | `DENY`                                         | `DENY`/`SAMEORIGIN` |
+| `X_CONTENT_TYPE_OPTIONS_ENABLED` | Enable X-Content-Type-Options: nosniff header | `true`                           | bool       |
+| `X_XSS_PROTECTION_ENABLED` | Enable X-XSS-Protection header | `true`                                         | bool       |
+| `X_DOWNLOAD_OPTIONS_ENABLED` | Enable X-Download-Options: noopen header | `true`                              | bool       |
 | `HSTS_ENABLED`            | Enable HSTS header             | `true`                                         | bool       |
 | `HSTS_MAX_AGE`            | HSTS max age in seconds        | `31536000`                                     | int        |
+| `HSTS_INCLUDE_SUBDOMAINS` | Include subdomains in HSTS header | `true`                                      | bool       |
 | `REMOVE_SERVER_HEADERS`   | Remove server identification   | `true`                                         | bool       |
 | `DOCS_ALLOW_BASIC_AUTH`   | Allow Basic Auth for docs (in addition to JWT)         | `false`                                        | bool       |
+| `MIN_SECRET_LENGTH`       | Minimum length for secret keys (JWT, encryption) | `32`                                | int        |
+| `MIN_PASSWORD_LENGTH`     | Minimum length for passwords   | `12`                                           | int        |
+| `REQUIRE_STRONG_SECRETS`  | Enforce strong secrets (fail startup on weak secrets) | `false`                        | bool       |
 
 > **CORS Configuration**: When `ENVIRONMENT=development`, CORS origins are automatically configured for common development ports (3000, 8080, gateway port). In production, origins are constructed from `APP_DOMAIN` (e.g., `https://yourdomain.com`, `https://app.yourdomain.com`). You can override this by explicitly setting `ALLOWED_ORIGINS`.
 >
 > **Security Headers**: The gateway automatically adds configurable security headers to all responses including CSP, X-Frame-Options, X-Content-Type-Options, X-Download-Options, and HSTS (on HTTPS). All headers can be individually enabled/disabled. Sensitive server headers are removed.
+>
+> **Security Validation**: Set `REQUIRE_STRONG_SECRETS=true` to enforce minimum lengths for JWT secrets and passwords at startup. This helps prevent weak credentials in production. Default is `false` for backward compatibility.
 >
 > **iframe Embedding**: By default, `X-Frame-Options: DENY` prevents iframe embedding for security. To allow embedding, set `X_FRAME_OPTIONS=SAMEORIGIN` (same domain) or disable with `X_FRAME_OPTIONS=""`. Also update CSP `frame-ancestors` directive if needed.
 >
@@ -1111,6 +1506,129 @@ You can get started by copying the provided [.env.example](.env.example) to `.en
 > Documentation endpoints (`/docs`, `/redoc`, `/openapi.json`) are always protected by authentication.
 > By default, they require Bearer token authentication. Setting `DOCS_ALLOW_BASIC_AUTH=true` enables HTTP Basic Authentication as an additional method using the same credentials as `BASIC_AUTH_USER` and `BASIC_AUTH_PASSWORD`.
 
+### Ed25519 Certificate Signing
+
+MCP Gateway supports **Ed25519 digital signatures** for certificate validation and integrity verification. This cryptographic signing mechanism ensures that CA certificates used by the gateway are authentic and haven't been tampered with.
+
+| Setting                     | Description                                      | Default | Options |
+| --------------------------- | ------------------------------------------------ | ------- | ------- |
+| `ENABLE_ED25519_SIGNING`    | Enable Ed25519 signing for certificates          | `false` | bool    |
+| `ED25519_PRIVATE_KEY`       | Ed25519 private key for signing (PEM format)     | (none)  | string  |
+| `PREV_ED25519_PRIVATE_KEY`  | Previous Ed25519 private key for key rotation    | (none)  | string  |
+
+**How It Works:**
+
+1. **Certificate Signing** - When `ENABLE_ED25519_SIGNING=true`, the gateway signs the CA certificate of each MCP server/gateway using the Ed25519 private key.
+
+2. **Certificate Validation** - Before using a CA certificate for subsequent calls, the gateway validates its signature to ensure authenticity and integrity.
+
+3. **Disabled Mode** - When `ENABLE_ED25519_SIGNING=false`, certificates are neither signed nor validated (default behavior).
+
+**Key Generation:**
+
+```bash
+# Generate a new Ed25519 key pair
+python mcpgateway/utils/generate_keys.py
+
+# Output will show:
+# - Private key (set this to ED25519_PRIVATE_KEY)
+```
+
+**Key Rotation:**
+
+To rotate keys without invalidating existing signed certificates:
+
+1. Move the current `ED25519_PRIVATE_KEY` value to `PREV_ED25519_PRIVATE_KEY`
+2. Generate a new key pair using the command above
+3. Set the new private key to `ED25519_PRIVATE_KEY`
+4. The gateway will automatically re-sign valid certificates at the point of key change
+
+**Example Configuration:**
+
+```bash
+# Enable Ed25519 signing
+ENABLE_ED25519_SIGNING=true
+
+# Current signing key (PEM format)
+ED25519_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIJ5pW... (your key here)
+-----END PRIVATE KEY-----"
+
+# Previous key for rotation (optional)
+PREV_ED25519_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIOld... (old key here)
+-----END PRIVATE KEY-----"
+```
+
+> 🔐 **Security Best Practices:**
+> - Store private keys securely (use secrets management tools like Vault, AWS Secrets Manager, etc.)
+> - Rotate keys periodically (recommended: every 90-180 days)
+> - Never commit private keys to version control
+> - Use environment variables or encrypted config files
+>
+> 🔑 **Public Key Derivation:**
+> - Public keys are automatically derived from private keys
+> - No need to configure public keys separately
+> - Both `ED25519_PUBLIC_KEY` and `PREV_ED25519_PUBLIC_KEY` are computed at startup
+>
+> ⚡ **Performance:**
+> - Ed25519 signing is extremely fast (~64 microseconds per signature)
+> - Minimal impact on gateway performance
+> - Recommended for production deployments requiring certificate integrity
+
+### Response Compression
+
+MCP Gateway includes automatic response compression middleware that reduces bandwidth usage by 30-70% for text-based responses (JSON, HTML, CSS, JS). Compression is negotiated automatically based on client `Accept-Encoding` headers with algorithm priority: **Brotli** (best compression) > **Zstd** (fastest) > **GZip** (universal fallback).
+
+| Setting                       | Description                                       | Default | Options              |
+| ----------------------------- | ------------------------------------------------- | ------- | -------------------- |
+| `COMPRESSION_ENABLED`         | Enable response compression                       | `true`  | bool                 |
+| `COMPRESSION_MINIMUM_SIZE`    | Minimum response size in bytes to compress        | `500`   | int (0=compress all) |
+| `COMPRESSION_GZIP_LEVEL`      | GZip compression level (1=fast, 9=best)          | `6`     | int (1-9)            |
+| `COMPRESSION_BROTLI_QUALITY`  | Brotli quality (0-3=fast, 4-9=balanced, 10-11=max) | `4`   | int (0-11)           |
+| `COMPRESSION_ZSTD_LEVEL`      | Zstd level (1-3=fast, 4-9=balanced, 10+=slow)    | `3`     | int (1-22)           |
+
+**Compression Behavior:**
+- Automatically negotiates algorithm based on client `Accept-Encoding` header
+- Only compresses responses larger than `COMPRESSION_MINIMUM_SIZE` bytes (small responses not worth compression overhead)
+- Adds `Vary: Accept-Encoding` header for proper cache behavior
+- No client changes required (browsers/clients handle decompression automatically)
+- Typical compression ratios: JSON responses 40-60%, HTML responses 50-70%
+
+**Performance Impact:**
+- CPU overhead: <5% (balanced settings)
+- Bandwidth reduction: 30-70% for text responses
+- Latency impact: <10ms for typical responses
+
+**Testing Compression:**
+```bash
+# Start server
+make dev
+
+# Test Brotli (best compression)
+curl -H "Accept-Encoding: br" http://localhost:8000/openapi.json -v | grep -i "content-encoding"
+
+# Test GZip (universal fallback)
+curl -H "Accept-Encoding: gzip" http://localhost:8000/openapi.json -v | grep -i "content-encoding"
+
+# Test Zstd (fastest)
+curl -H "Accept-Encoding: zstd" http://localhost:8000/openapi.json -v | grep -i "content-encoding"
+```
+
+**Tuning for Production:**
+```bash
+# High-traffic (optimize for speed)
+COMPRESSION_GZIP_LEVEL=4
+COMPRESSION_BROTLI_QUALITY=3
+COMPRESSION_ZSTD_LEVEL=1
+
+# Bandwidth-constrained (optimize for size)
+COMPRESSION_GZIP_LEVEL=9
+COMPRESSION_BROTLI_QUALITY=11
+COMPRESSION_ZSTD_LEVEL=9
+```
+
+> **Note**: See [Scaling Guide](https://ibm.github.io/mcp-context-forge/manage/scale/) for compression performance optimization at scale.
 
 ### Logging
 
@@ -1127,6 +1645,7 @@ MCP Gateway provides flexible logging with **stdout/stderr output by default** a
 | `LOG_ROTATION_ENABLED`  | **Enable log file rotation**       | **`false`**       | **`true`, `false`**        |
 | `LOG_MAX_SIZE_MB`       | Max file size before rotation (MB) | `1`               | Any positive integer       |
 | `LOG_BACKUP_COUNT`      | Number of backup files to keep     | `5`               | Any non-negative integer   |
+| `LOG_BUFFER_SIZE_MB`    | Size of in-memory log buffer (MB)  | `1.0`             | float > 0                  |
 
 **Logging Behavior:**
 - **Default**: Logs only to **stdout/stderr** with human-readable text format
@@ -1170,7 +1689,7 @@ MCP Gateway includes **vendor-agnostic OpenTelemetry support** for distributed t
 | ------------------------------- | ---------------------------------------------- | --------------------- | ------------------------------------------ |
 | `OTEL_ENABLE_OBSERVABILITY`     | Master switch for observability               | `true`                | `true`, `false`                           |
 | `OTEL_SERVICE_NAME`             | Service identifier in traces                   | `mcp-gateway`         | string                                     |
-| `OTEL_SERVICE_VERSION`          | Service version in traces                      | `0.6.0`               | string                                     |
+| `OTEL_SERVICE_VERSION`          | Service version in traces                      | `0.9.0`               | string                                     |
 | `OTEL_DEPLOYMENT_ENVIRONMENT`   | Environment tag (dev/staging/prod)            | `development`         | string                                     |
 | `OTEL_TRACES_EXPORTER`          | Trace exporter backend                         | `otlp`                | `otlp`, `jaeger`, `zipkin`, `console`, `none` |
 | `OTEL_RESOURCE_ATTRIBUTES`      | Custom resource attributes                     | (empty)               | `key=value,key2=value2`                   |
@@ -1221,6 +1740,81 @@ mcpgateway
 >
 > 📊 **View Traces**: Phoenix UI at `http://localhost:6006`, Jaeger at `http://localhost:16686`, or your configured backend
 
+### Internal Observability & Tracing
+
+The gateway includes built-in observability features for tracking HTTP requests, spans, and traces independent of OpenTelemetry. This provides database-backed trace storage and analysis directly in the Admin UI.
+
+| Setting                              | Description                                           | Default                                              | Options          |
+| ------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------- | ---------------- |
+| `OBSERVABILITY_ENABLED`              | Enable internal observability tracing and metrics     | `false`                                              | bool             |
+| `OBSERVABILITY_TRACE_HTTP_REQUESTS`  | Automatically trace HTTP requests                     | `true`                                               | bool             |
+| `OBSERVABILITY_TRACE_RETENTION_DAYS` | Number of days to retain trace data                   | `7`                                                  | int (≥ 1)        |
+| `OBSERVABILITY_MAX_TRACES`           | Maximum number of traces to retain                    | `100000`                                             | int (≥ 1000)     |
+| `OBSERVABILITY_SAMPLE_RATE`          | Trace sampling rate (0.0-1.0)                        | `1.0`                                                | float (0.0-1.0)  |
+| `OBSERVABILITY_EXCLUDE_PATHS`        | Paths to exclude from tracing (regex patterns)        | `/health,/healthz,/ready,/metrics,/static/.*`        | comma-separated  |
+| `OBSERVABILITY_METRICS_ENABLED`      | Enable metrics collection                             | `true`                                               | bool             |
+| `OBSERVABILITY_EVENTS_ENABLED`       | Enable event logging within spans                     | `true`                                               | bool             |
+
+**Key Features:**
+- 📊 **Database-backed storage**: Traces stored in SQLite/PostgreSQL for persistence
+- 🔍 **Admin UI integration**: View traces, spans, and metrics in the diagnostics tab
+- 🎯 **Sampling control**: Configure sampling rate to reduce overhead in high-traffic scenarios
+- 🕐 **Automatic cleanup**: Old traces automatically purged based on retention settings
+- 🚫 **Path filtering**: Exclude health checks and static resources from tracing
+
+**Configuration Effects:**
+- `OBSERVABILITY_ENABLED=false`: Completely disables internal observability (no database writes, zero overhead)
+- `OBSERVABILITY_SAMPLE_RATE=0.1`: Traces 10% of requests (useful for high-volume production)
+- `OBSERVABILITY_EXCLUDE_PATHS=/health,/metrics`: Prevents noisy endpoints from creating traces
+
+> 📝 **Note**: This is separate from OpenTelemetry. You can use both systems simultaneously - internal observability for Admin UI visibility and OpenTelemetry for external systems like Phoenix/Jaeger.
+>
+> 🎛️ **Admin UI Access**: When enabled, traces appear in **Admin → Diagnostics → Observability** tab with filtering, search, and export capabilities
+
+### Prometheus Metrics
+
+The gateway exposes Prometheus-compatible metrics at `/metrics/prometheus` for monitoring and alerting.
+
+| Setting                      | Description                                              | Default   | Options          |
+| ---------------------------- | -------------------------------------------------------- | --------- | ---------------- |
+| `ENABLE_METRICS`             | Enable Prometheus metrics instrumentation                | `true`    | bool             |
+| `METRICS_EXCLUDED_HANDLERS`  | Regex patterns for paths to exclude from metrics         | (empty)   | comma-separated  |
+| `METRICS_NAMESPACE`          | Prometheus metrics namespace (prefix)                    | `default` | string           |
+| `METRICS_SUBSYSTEM`          | Prometheus metrics subsystem (secondary prefix)          | (empty)   | string           |
+| `METRICS_CUSTOM_LABELS`      | Static custom labels for app_info gauge                  | (empty)   | `key=value,...`  |
+
+**Key Features:**
+- 📊 **Standard metrics**: HTTP request duration, response codes, active requests
+- 🏷️ **Custom labels**: Add static labels (environment, region, team) for filtering in Prometheus/Grafana
+- 🚫 **Path exclusions**: Prevent high-cardinality issues by excluding dynamic paths
+- 📈 **Namespace isolation**: Group metrics by application or organization
+
+**Configuration Examples:**
+
+```bash
+# Production deployment with custom labels
+ENABLE_METRICS=true
+METRICS_NAMESPACE=mycompany
+METRICS_SUBSYSTEM=gateway
+METRICS_CUSTOM_LABELS=environment=production,region=us-east-1,team=platform
+
+# Exclude high-volume endpoints from metrics
+METRICS_EXCLUDED_HANDLERS=/servers/.*/sse,/static/.*,.*health.*
+
+# Disable metrics for development
+ENABLE_METRICS=false
+```
+
+**Metric Names:**
+- With namespace + subsystem: `mycompany_gateway_http_requests_total`
+- Default (no namespace/subsystem): `default_http_requests_total`
+
+> ⚠️ **High-Cardinality Warning**: Never use high-cardinality values (user IDs, request IDs, timestamps) in `METRICS_CUSTOM_LABELS`. Only use low-cardinality static values (environment, region, cluster).
+>
+> 📊 **Prometheus Endpoint**: Access metrics at `GET /metrics/prometheus` (requires authentication if `AUTH_REQUIRED=true`)
+>
+> 🎯 **Grafana Integration**: Import metrics into Grafana dashboards using the configured namespace as a filter
+
 ### Transport
 
 | Setting                   | Description                        | Default | Options                         |
@@ -1262,6 +1856,7 @@ mcpgateway
 | `MAX_TOOL_RETRIES`      | Max retry attempts             | `3`     | int ≥ 0 |
 | `TOOL_RATE_LIMIT`       | Tool calls per minute          | `100`   | int > 0 |
 | `TOOL_CONCURRENT_LIMIT` | Concurrent tool invocations    | `10`    | int > 0 |
+| `GATEWAY_TOOL_NAME_SEPARATOR` | Tool name separator for gateway routing | `-`     | `-`, `--`, `_`, `.` |
 
 ### Prompts
 
@@ -1279,6 +1874,9 @@ mcpgateway
 | `HEALTH_CHECK_TIMEOUT`  | Health request timeout (secs)             | `10`    | int > 0 |
 | `UNHEALTHY_THRESHOLD`   | Fail-count before peer deactivation,      | `3`     | int > 0 |
 |                         | Set to -1 if deactivation is not needed.  |         |         |
+| `GATEWAY_VALIDATION_TIMEOUT` | Gateway URL validation timeout (secs) | `5`     | int > 0 |
+| `FILELOCK_NAME`         | File lock for leader election             | `gateway_service_leader.lock` | string |
+| `DEFAULT_ROOTS`         | Default root paths for resources          | `[]`    | JSON array |
 
 ### Database
 
@@ -1295,13 +1893,15 @@ mcpgateway
 
 | Setting                   | Description                | Default  | Options                  |
 | ------------------------- | -------------------------- | -------- | ------------------------ |
-| `CACHE_TYPE`              | Backend (`memory`/`redis`) | `memory` | `none`, `memory`,`redis` |
+| `CACHE_TYPE`              | Backend type | `database` | `none`, `memory`, `database`, `redis` |
 | `REDIS_URL`               | Redis connection URL       | (none)   | string or empty          |
 | `CACHE_PREFIX`            | Key prefix                 | `mcpgw:` | string                   |
+| `SESSION_TTL`             | Session validity (secs)    | `3600`   | int > 0                  |
+| `MESSAGE_TTL`             | Message retention (secs)   | `600`    | int > 0                  |
 | `REDIS_MAX_RETRIES`       | Max Retry Attempts         | `3`      | int > 0                  |
 | `REDIS_RETRY_INTERVAL_MS` | Retry Interval (ms)        | `2000`   | int > 0                  |
 
-> 🧠 `none` disables caching entirely. Use `memory` for dev, `database` for persistence, or `redis` for distributed caching.
+> 🧠 `none` disables caching entirely. Use `memory` for dev, `database` for local persistence, or `redis` for distributed caching across multiple instances.
 
 ### Database Management
 
@@ -1330,6 +1930,56 @@ MCP Gateway uses Alembic for database migrations. Common commands:
 | `DEV_MODE` | Enable dev mode        | `false` | bool    |
 | `RELOAD`   | Auto-reload on changes | `false` | bool    |
 | `DEBUG`    | Debug logging          | `false` | bool    |
+
+### Well-Known URI Configuration
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `WELL_KNOWN_ENABLED`          | Enable well-known URI endpoints (/.well-known/*) | `true`                | bool    |
+| `WELL_KNOWN_ROBOTS_TXT`       | robots.txt content                               | (blocks crawlers)     | string  |
+| `WELL_KNOWN_SECURITY_TXT`     | security.txt content (RFC 9116)                 | (empty)               | string  |
+| `WELL_KNOWN_CUSTOM_FILES`     | Additional custom well-known files (JSON)       | `{}`                  | JSON object |
+| `WELL_KNOWN_CACHE_MAX_AGE`    | Cache control for well-known files (seconds)    | `3600`                | int > 0 |
+
+> 🔍 **robots.txt**: By default, blocks all crawlers for security. Customize for your needs.
+>
+> 🔐 **security.txt**: Define security contact information per RFC 9116. Leave empty to disable.
+>
+> 📄 **Custom Files**: Add arbitrary well-known files like `ai.txt`, `dnt-policy.txt`, etc.
+
+### Header Passthrough Configuration
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `ENABLE_HEADER_PASSTHROUGH`   | Enable HTTP header passthrough feature (⚠️ Security implications) | `false` | bool |
+| `ENABLE_OVERWRITE_BASE_HEADERS` | Enable overwriting of base headers (⚠️ Advanced usage) | `false` | bool |
+| `DEFAULT_PASSTHROUGH_HEADERS` | Default headers to pass through (JSON array)    | `["X-Tenant-Id", "X-Trace-Id"]` | JSON array |
+
+> ⚠️ **Security Warning**: Header passthrough is disabled by default for security. Only enable if you understand the implications and have reviewed which headers should be passed through to backing MCP servers. Authorization headers are not included in defaults.
+
+### Plugin Configuration
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `PLUGINS_ENABLED`             | Enable the plugin framework                      | `false`               | bool    |
+| `PLUGIN_CONFIG_FILE`          | Path to main plugin configuration file          | `plugins/config.yaml` | string  |
+| `PLUGINS_MTLS_CA_BUNDLE`      | (Optional) default CA bundle for external plugin mTLS | _(empty)_     | string  |
+| `PLUGINS_MTLS_CLIENT_CERT`    | (Optional) gateway client certificate for plugin mTLS | _(empty)_     | string  |
+| `PLUGINS_MTLS_CLIENT_KEY`     | (Optional) gateway client key for plugin mTLS | _(empty)_             | string  |
+| `PLUGINS_MTLS_CLIENT_KEY_PASSWORD` | (Optional) password for plugin client key | _(empty)_             | string  |
+| `PLUGINS_MTLS_VERIFY`         | (Optional) verify remote plugin certificates (`true`/`false`) | `true` | bool    |
+| `PLUGINS_MTLS_CHECK_HOSTNAME` | (Optional) enforce hostname verification for plugins | `true`      | bool    |
+| `PLUGINS_CLI_COMPLETION`      | Enable auto-completion for plugins CLI          | `false`               | bool    |
+| `PLUGINS_CLI_MARKUP_MODE`     | Set markup mode for plugins CLI                 | (none)                | `rich`, `markdown`, `disabled` |
+
+### HTTP Retry Configuration
+
+| Setting                        | Description                                      | Default               | Options |
+| ------------------------------ | ------------------------------------------------ | --------------------- | ------- |
+| `RETRY_MAX_ATTEMPTS`          | Maximum retry attempts for HTTP requests         | `3`                   | int > 0 |
+| `RETRY_BASE_DELAY`            | Base delay between retries (seconds)             | `1.0`                 | float > 0 |
+| `RETRY_MAX_DELAY`             | Maximum delay between retries (seconds)          | `60`                  | int > 0 |
+| `RETRY_JITTER_MAX`            | Maximum jitter fraction of base delay            | `0.5`                 | float 0-1 |
 
 </details>
 
@@ -1480,7 +2130,7 @@ Generate an API Bearer token, and test the various API endpoints.
 
 ```bash
 # Generate a bearer token using the configured secret key (use the same as your .env)
-export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token -u admin --secret my-test-key)
+export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --secret my-test-key)
 echo ${MCPGATEWAY_BEARER_TOKEN}
 
 # Quickly confirm that authentication works and the gateway is healthy
@@ -1915,7 +2565,7 @@ make lint            # Run lint tools
 
 ## Doctest Coverage
 
-MCP Context Forge implements comprehensive doctest coverage to ensure all code examples in documentation are tested and verified:
+ContextForge implements comprehensive doctest coverage to ensure all code examples in documentation are tested and verified:
 
 ```bash
 make doctest         # Run all doctests
@@ -2137,7 +2787,7 @@ This project offer the following Makefile targets. Type `make` in the project ro
 <summary><strong>🔧 Available Makefile targets</strong></summary>
 
 ```bash
-🐍 MCP CONTEXT FORGE  (An enterprise-ready Model Context Protocol Gateway)
+🐍 MCP CONTEXTFORGE  (An enterprise-ready Model Context Protocol Gateway)
 🔧 SYSTEM-LEVEL DEPENDENCIES (DEV BUILD ONLY)
 os-deps              - Install Graphviz, Pandoc, Trivy, SCC used for dev docs generation and security scan
 🌱 VIRTUAL ENVIRONMENT & INSTALLATION
@@ -2322,6 +2972,45 @@ devpi-web            - Open devpi web interface
 ## 🔍 Troubleshooting
 
 <details>
+<summary><strong>macOS: SQLite "disk I/O error" when running make serve</strong></summary>
+
+If the gateway fails on macOS with `sqlite3.OperationalError: disk I/O error` (works on Linux/Docker), it's usually a filesystem/locking quirk rather than a schema bug.
+
+Quick placement guidance (macOS):
+- Avoid cloning/running the repo under `~/Documents` or `~/Desktop` if iCloud "Desktop & Documents" sync is enabled.
+- A simple, safe choice is a project folder directly under your home directory:
+  - `mkdir -p "$HOME/mcp-context-forge" && cd "$HOME/mcp-context-forge"`
+  - If you keep the DB inside the repo, use a subfolder like `data/` and an absolute path in `.env`:
+    - `mkdir -p "$HOME/mcp-context-forge/data"`
+    - `DATABASE_URL=sqlite:////Users/$USER/mcp-context-forge/data/mcp.db`
+
+- Use a safe, local APFS path for SQLite (avoid iCloud/Dropbox/OneDrive/Google Drive, network shares, or external exFAT/NAS):
+  - Option A (system location): point the DB to Application Support (note spaces):
+    - `mkdir -p "$HOME/Library/Application Support/mcpgateway"`
+    - `export DATABASE_URL="sqlite:////Users/$USER/Library/Application Support/mcpgateway/mcp.db"`
+  - Option B (project-local): keep the DB under `~/mcp-context-forge/data`:
+    - `mkdir -p "$HOME/mcp-context-forge/data"`
+    - `export DATABASE_URL="sqlite:////Users/$USER/mcp-context-forge/data/mcp.db"`
+- Clean stale SQLite artifacts after any crash:
+  - `pkill -f mcpgateway || true && rm -f mcp.db-wal mcp.db-shm mcp.db-journal`
+- Reduce startup concurrency to rule out multi-process contention:
+  - `GUNICORN_WORKERS=1 make serve` (or use `make dev` which runs single-process)
+- Run the diagnostic helper to verify the environment:
+  - `python3 scripts/test_sqlite.py --verbose`
+- While debugging, consider lowering pool pressure and retry:
+  - `DB_POOL_SIZE=10 DB_MAX_OVERFLOW=0 DB_POOL_TIMEOUT=60 DB_MAX_RETRIES=10 DB_RETRY_INTERVAL_MS=5000`
+- Optional: temporarily disable the file-lock leader path by using the in-process mode:
+  - `export CACHE_TYPE=none`
+
+If the error persists, update SQLite and ensure Python links against it:
+- `brew install sqlite3 && brew link --force sqlite3`
+- `brew install python3 && /opt/homebrew/bin/python3 -c 'import sqlite3; print(sqlite3.sqlite_version)'`
+
+See the full migration guide's "SQLite Troubleshooting Guide" for deeper steps (WAL cleanup, integrity check, recovery): `MIGRATION-0.7.0.md`.
+
+</details>
+
+<details>
 <summary><strong>Port publishing on WSL2 (rootless Podman & Docker Desktop)</strong></summary>
 
 ### Diagnose the listener
@@ -2400,7 +3089,7 @@ Licensed under the **Apache License 2.0** - see [LICENSE](./LICENSE)
 
 - [Mihai Criveti](https://www.linkedin.com/in/crivetimihai) - Distinguished Engineer, Agentic AI
 
-Special thanks to our contributors for helping us improve ContextForge MCP Gateway:
+Special thanks to our contributors for helping us improve ContextForge:
 
 <a href="https://github.com/ibm/mcp-context-forge/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=ibm/mcp-context-forge&max=100&anon=0&columns=10" />

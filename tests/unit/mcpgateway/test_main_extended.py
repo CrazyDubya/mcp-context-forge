@@ -73,7 +73,9 @@ class TestEndpointErrorHandling:
         """Test resource endpoints with various error conditions."""
         # Test resource not found scenario
         with patch("mcpgateway.main.resource_service.read_resource") as mock_read:
+            # First-Party
             from mcpgateway.services.resource_service import ResourceNotFoundError
+
             mock_read.side_effect = ResourceNotFoundError("Resource not found")
 
             response = test_client.get("/resources/test/resource", headers=auth_headers)
@@ -122,34 +124,36 @@ class TestApplicationStartupPaths:
 
     @patch("mcpgateway.main.plugin_manager", None)
     @patch("mcpgateway.main.logging_service")
+    @patch("mcpgateway.config.settings.require_strong_secrets", False)
+    @patch("mcpgateway.config.settings.dev_mode", True)
     async def test_startup_without_plugin_manager(self, mock_logging_service):
         """Test startup path when plugin_manager is None."""
         mock_logging_service.initialize = AsyncMock()
         mock_logging_service.configure_uvicorn_after_startup = MagicMock()
 
         # Mock all required services
-        with patch("mcpgateway.main.tool_service") as mock_tool, \
-             patch("mcpgateway.main.resource_service") as mock_resource, \
-             patch("mcpgateway.main.prompt_service") as mock_prompt, \
-             patch("mcpgateway.main.gateway_service") as mock_gateway, \
-             patch("mcpgateway.main.root_service") as mock_root, \
-             patch("mcpgateway.main.completion_service") as mock_completion, \
-             patch("mcpgateway.main.sampling_handler") as mock_sampling, \
-             patch("mcpgateway.main.resource_cache") as mock_cache, \
-             patch("mcpgateway.main.streamable_http_session") as mock_session, \
-             patch("mcpgateway.main.refresh_slugs_on_startup") as mock_refresh:
-
+        with (
+            patch("mcpgateway.main.tool_service") as mock_tool,
+            patch("mcpgateway.main.resource_service") as mock_resource,
+            patch("mcpgateway.main.prompt_service") as mock_prompt,
+            patch("mcpgateway.main.gateway_service") as mock_gateway,
+            patch("mcpgateway.main.root_service") as mock_root,
+            patch("mcpgateway.main.completion_service") as mock_completion,
+            patch("mcpgateway.main.sampling_handler") as mock_sampling,
+            patch("mcpgateway.main.resource_cache") as mock_cache,
+            patch("mcpgateway.main.streamable_http_session") as mock_session,
+            patch("mcpgateway.main.refresh_slugs_on_startup") as mock_refresh,
+        ):
             # Setup all mocks
-            services = [
-                mock_tool, mock_resource, mock_prompt, mock_gateway,
-                mock_root, mock_completion, mock_sampling, mock_cache, mock_session
-            ]
+            services = [mock_tool, mock_resource, mock_prompt, mock_gateway, mock_root, mock_completion, mock_sampling, mock_cache, mock_session]
             for service in services:
                 service.initialize = AsyncMock()
                 service.shutdown = AsyncMock()
 
             # Test lifespan without plugin manager
+            # First-Party
             from mcpgateway.main import lifespan
+
             async with lifespan(app):
                 pass
 
@@ -172,11 +176,7 @@ class TestUtilityFunctions:
 
         # Test with valid session_id
         with patch("mcpgateway.main.session_registry.broadcast") as mock_broadcast:
-            response = test_client.post(
-                "/message?session_id=test-session",
-                json=message,
-                headers=auth_headers
-            )
+            response = test_client.post("/message?session_id=test-session", json=message, headers=auth_headers)
             assert response.status_code == 202
             mock_broadcast.assert_called_once()
 
@@ -237,7 +237,7 @@ class TestUtilityFunctions:
         mock_settings.port = 4444
 
         with patch("mcpgateway.main.ResilientHttpClient") as mock_client:
-            from types import SimpleNamespace
+            # Standard
 
             mock_instance = mock_client.return_value
             mock_instance.__aenter__.return_value = mock_instance
@@ -265,9 +265,7 @@ class TestUtilityFunctions:
 
     def test_sse_endpoint_edge_cases(self, test_client, auth_headers):
         """Test SSE endpoint edge cases."""
-        with patch("mcpgateway.main.SSETransport") as mock_transport_class, \
-             patch("mcpgateway.main.session_registry.add_session") as mock_add_session:
-
+        with patch("mcpgateway.main.SSETransport") as mock_transport_class, patch("mcpgateway.main.session_registry.add_session") as mock_add_session:
             mock_transport = MagicMock()
             mock_transport.session_id = "test-session"
 
@@ -282,6 +280,7 @@ class TestUtilityFunctions:
         """Test server toggle endpoint edge cases."""
         with patch("mcpgateway.main.server_service.toggle_server_status") as mock_toggle:
             # Create a proper ServerRead model response
+            # First-Party
             from mcpgateway.schemas import ServerRead
 
             mock_server_data = {
@@ -304,7 +303,7 @@ class TestUtilityFunctions:
                     "max_response_time": 0.0,
                     "avg_response_time": 0.0,
                     "last_execution_time": None,
-                }
+                },
             }
 
             mock_toggle.return_value = ServerRead(**mock_server_data)
@@ -324,11 +323,76 @@ class TestUtilityFunctions:
 @pytest.fixture
 def test_client(app):
     """Test client with auth override for testing protected endpoints."""
+    # Standard
+    from unittest.mock import patch
+
+    # First-Party
+    from mcpgateway.auth import get_current_user
+    from mcpgateway.db import EmailUser
     from mcpgateway.main import require_auth
+    from mcpgateway.middleware.rbac import get_current_user_with_permissions
+
+    # Mock user object for RBAC system
+    mock_user = EmailUser(
+        email="test_user@example.com",
+        full_name="Test User",
+        is_admin=True,  # Give admin privileges for tests
+        is_active=True,
+        auth_provider="test",
+    )
+
+    # Mock require_auth_override function
+    def mock_require_auth_override(user: str) -> str:
+        return user
+
+    # Patch the require_docs_auth_override function
+    patcher = patch("mcpgateway.main.require_docs_auth_override", mock_require_auth_override)
+    patcher.start()
+
+    # Override the core auth function used by RBAC system
+    app.dependency_overrides[get_current_user] = lambda credentials=None, db=None: mock_user
+
+    # Override get_current_user_with_permissions for RBAC system
+    def mock_get_current_user_with_permissions(request=None, credentials=None, jwt_token=None, db=None):
+        return {"email": "test_user@example.com", "full_name": "Test User", "is_admin": True, "ip_address": "127.0.0.1", "user_agent": "test", "db": db}
+
+    app.dependency_overrides[get_current_user_with_permissions] = mock_get_current_user_with_permissions
+
+    # Mock the permission service to always return True for tests
+    # First-Party
+    from mcpgateway.services.permission_service import PermissionService
+
+    if not hasattr(PermissionService, "_original_check_permission"):
+        PermissionService._original_check_permission = PermissionService.check_permission
+
+    async def mock_check_permission(
+        self,
+        user_email: str,
+        permission: str,
+        resource_type=None,
+        resource_id=None,
+        team_id=None,
+        ip_address=None,
+        user_agent=None,
+    ) -> bool:
+        return True
+
+    PermissionService.check_permission = mock_check_permission
+
+    # Override require_auth for backward compatibility
     app.dependency_overrides[require_auth] = lambda: "test_user"
+
     client = TestClient(app)
     yield client
+
+    # Clean up overrides and restore original methods
     app.dependency_overrides.pop(require_auth, None)
+    app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_current_user_with_permissions, None)
+    patcher.stop()  # Stop the require_auth_override patch
+    if hasattr(PermissionService, "_original_check_permission"):
+        PermissionService.check_permission = PermissionService._original_check_permission
+
 
 @pytest.fixture
 def auth_headers():

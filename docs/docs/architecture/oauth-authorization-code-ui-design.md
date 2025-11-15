@@ -152,7 +152,7 @@ class TokenStorageService:
             encrypted_refresh = self.encryption.encrypt_secret(refresh_token)
 
         # Calculate expiration
-        expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        expires_at = datetime.now(tz=timezone.utc) + timedelta(seconds=expires_in)
 
         # Create or update token record
         token_record = self.db.query(OAuthToken).filter(
@@ -166,7 +166,7 @@ class TokenStorageService:
             token_record.refresh_token = encrypted_refresh
             token_record.expires_at = expires_at
             token_record.scopes = scopes
-            token_record.updated_at = datetime.utcnow()
+            token_record.updated_at = datetime.now(tz=timezone.utc)
         else:
             # Create new record
             token_record = OAuthToken(
@@ -217,7 +217,7 @@ class TokenStorageService:
 
     def _is_token_expired(self, token_record: OAuthToken, threshold_seconds: int = 300) -> bool:
         """Check if token is expired or near expiration."""
-        return datetime.utcnow() + timedelta(seconds=threshold_seconds) >= token_record.expires_at
+        return datetime.now(tz=timezone.utc) + timedelta(seconds=threshold_seconds) >= token_record.expires_at
 ```
 
 ### 2. Enhanced OAuth Manager
@@ -815,6 +815,7 @@ async def test_oauth_callback_end_to_end():
 This design provides a comprehensive framework for implementing OAuth 2.0 Authorization Code flow with user consent in the MCP Gateway UI. The implementation balances security, usability, and maintainability while extending the existing OAuth infrastructure.
 
 Key benefits of this approach:
+
 - **User Consent**: Proper user delegation with scoped permissions
 - **Token Efficiency**: Reuse of valid tokens with automatic refresh
 - **Security**: Encrypted token storage and comprehensive validation

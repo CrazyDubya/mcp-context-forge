@@ -28,6 +28,13 @@ spec:
         app: {{ include "mcp-stack.fullname" . }}-mcpgateway
 
     spec:
+      # Image pull secrets
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range .Values.global.imagePullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
       containers:
         - name: mcp-context-forge
           image: "{{ .Values.mcpContextForge.image.repository }}:{{ .Values.mcpContextForge.image.tag }}"
@@ -66,6 +73,23 @@ spec:
               value: {{ printf "%s-redis" (include "mcp-stack.fullname" .) }}
             - name: REDIS_PORT
               value: "{{ .Values.mcpContextForge.env.redis.port }}"
+
+            # ---------- METRICS ----------
+            {{- if .Values.mcpContextForge.metrics.enabled }}
+            - name: ENABLE_METRICS
+              value: "{{ .Values.mcpContextForge.metrics.enabled }}"
+            {{- if .Values.mcpContextForge.metrics.excludedHandlers }}
+            - name: METRICS_EXCLUDED_HANDLERS
+              value: "{{ .Values.mcpContextForge.metrics.excludedHandlers }}"
+            {{- end }}
+            {{- if .Values.mcpContextForge.metrics.customLabels }}
+            - name: METRICS_CUSTOM_LABELS
+              value: "{{ range $key, $value := .Values.mcpContextForge.metrics.customLabels }}{{ $key }}={{ $value }},{{ end }}"
+            {{- end }}
+            {{- else }}
+            - name: ENABLE_METRICS
+              value: "false"
+            {{- end }}
 
             # ---------- DERIVED URLS ----------
             # These MUST be placed *after* the concrete vars above so the
@@ -128,3 +152,20 @@ spec:
           # Resource requests / limits
           resources:
 {{- toYaml .Values.mcpContextForge.resources | nindent 12 }}
+
+          {{- /* Plugins enabled need the plugins configuration */}}
+          {{- if .Values.mcpContextForge.pluginConfig.enabled }}
+          volumeMounts:
+            - name: plugin-config-volume
+              mountPath: /app/{{ .Values.mcpContextForge.config.PLUGIN_CONFIG_FILE }}
+              subPath: config.yaml
+          {{- end }}
+{{- if .Values.mcpContextForge.pluginConfig.enabled }}
+      volumes:
+      - name: plugin-config-volume
+        configMap:
+          name: {{ include "mcp-stack.fullname" . }}-gateway-plugins
+          items:
+          - key: config.yaml
+            path: config.yaml
+{{- end }}

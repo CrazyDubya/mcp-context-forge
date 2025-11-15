@@ -42,6 +42,7 @@ import time
 from types import SimpleNamespace
 from typing import Callable, Dict, List, Tuple
 import uuid
+from urllib.parse import urlencode
 
 # First-Party
 from mcpgateway.config import settings
@@ -163,7 +164,7 @@ def run_shell(
             if verbose:
                 continue
             spinner = next(_spinner_cycle)
-            header = f"{spinner} {desc} (elapsed {time.time()-start:4.0f}s)"
+            header = f"{spinner} {desc} (elapsed {time.time() - start:4.0f}s)"
             pane_lines = list(tail_buf)
             pane_height = len(pane_lines) + 2
             sys.stdout.write(f"\x1b[{pane_height}F\x1b[J")  # rewind & clear
@@ -179,7 +180,7 @@ def run_shell(
         proc.wait()
 
     if not verbose:  # clear final pane
-        sys.stdout.write(f"\x1b[{min(len(tail_buf)+2, tail+2)}F\x1b[J")
+        sys.stdout.write(f"\x1b[{min(len(tail_buf) + 2, tail + 2)}F\x1b[J")
         sys.stdout.flush()
 
     globals()["_PREV_CMD_OUTPUT"] = "\n".join(full_buf)  # for show_last()
@@ -230,7 +231,8 @@ def generate_jwt() -> str:
     Create a short-lived admin JWT that matches the gateway's settings.
     Resolution order → environment-variable override, then package defaults.
     """
-    user = os.getenv("BASIC_AUTH_USER", "admin")
+    # Use email format for new authentication system
+    user = os.getenv("PLATFORM_ADMIN_EMAIL", "admin@example.com")
     secret = os.getenv("JWT_SECRET_KEY", "my-test-key")
     expiry = os.getenv("TOKEN_EXPIRY", "300")  # seconds
 
@@ -251,7 +253,7 @@ def generate_jwt() -> str:
     return subprocess.check_output(cmd, text=True).strip().strip('"')
 
 
-def request(method: str, path: str, *, json_data=None, **kw):
+def request(method: str, path: str, *, json_data=None, form_data=None, **kw):
     # Third-Party
     import requests
 
@@ -260,7 +262,12 @@ def request(method: str, path: str, *, json_data=None, **kw):
     kw["verify"] = False
     url = f"https://localhost:{PORT_GATEWAY}{path}"
     t0 = time.time()
-    resp = requests.request(method, url, json=json_data, **kw)
+    content_type = os.getenv("FORGE_CONTENT_TYPE", "application/json")
+    kw["headers"]["Content-Type"] = content_type
+    if content_type == "application/x-www-form-urlencoded" and form_data is not None:
+        resp = requests.request(method, url, data=urlencode(form_data), **kw)
+    else:
+        resp = requests.request(method, url, json=json_data, **kw)
     ms = (time.time() - t0) * 1000
     logging.info("→ %s %s %s %.0f ms", method.upper(), path, resp.status_code, ms)
     logging.debug("  ↳ response: %s", resp.text[:400])

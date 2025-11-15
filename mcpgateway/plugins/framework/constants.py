@@ -16,12 +16,25 @@ EXTERNAL_PLUGIN_TYPE = "external"
 PYTHON_SUFFIX = ".py"
 URL = "url"
 SCRIPT = "script"
-AFTER = "after"
 
 NAME = "name"
 PYTHON = "python"
 PLUGIN_NAME = "plugin_name"
 PAYLOAD = "payload"
 CONTEXT = "context"
-GET_PLUGIN_CONFIG = "get_plugin_config"
+RESULT = "result"
+ERROR = "error"
 IGNORE_CONFIG_EXTERNAL = "ignore_config_external"
+
+# Global Context Metadata fields
+
+TOOL_METADATA = "tool"
+GATEWAY_METADATA = "gateway"
+
+# MCP Plugin Server Runtime constants
+MCP_SERVER_NAME = "MCP Plugin Server"
+MCP_SERVER_INSTRUCTIONS = "External plugin server for MCP Gateway"
+GET_PLUGIN_CONFIGS = "get_plugin_configs"
+GET_PLUGIN_CONFIG = "get_plugin_config"
+HOOK_TYPE = "hook_type"
+INVOKE_HOOK = "invoke_hook"

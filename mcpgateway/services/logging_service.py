@@ -11,20 +11,30 @@ It supports RFC 5424 severity levels, log level management, and log event subscr
 
 # Standard
 import asyncio
+from asyncio.events import AbstractEventLoop
 from datetime import datetime, timezone
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, NotRequired, Optional, TextIO, TypedDict
 
 # Third-Party
-from pythonjsonlogger import jsonlogger  # You may need to install python-json-logger package
+from pythonjsonlogger import json as jsonlogger  # You may need to install python-json-logger package
 
 # First-Party
+from mcpgateway.common.models import LogLevel
 from mcpgateway.config import settings
-from mcpgateway.models import LogLevel
 from mcpgateway.services.log_storage_service import LogStorageService
 
+AnyioClosedResourceError: Optional[type]  # pylint: disable=invalid-name
+try:
+    # Optional import; only used for filtering a known benign upstream error
+    # Third-Party
+    from anyio import ClosedResourceError as AnyioClosedResourceError  # pylint: disable=invalid-name
+except Exception:  # pragma: no cover - environment without anyio
+    AnyioClosedResourceError = None  # pylint: disable=invalid-name
+
+# First-Party
 # Create a text formatter
 text_formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -36,7 +46,7 @@ json_formatter = jsonlogger.JsonFormatter("%(asctime)s %(name)s %(levelname)s %(
 
 # Global handlers will be created lazily
 _file_handler: Optional[logging.Handler] = None
-_text_handler: Optional[logging.StreamHandler] = None
+_text_handler: Optional[logging.StreamHandler[TextIO]] = None
 
 
 def _get_file_handler() -> logging.Handler:
@@ -47,6 +57,7 @@ def _get_file_handler() -> logging.Handler:
 
     Raises:
         ValueError: If file logging is disabled or no log file specified.
+
     """
     global _file_handler  # pylint: disable=global-statement
     if _file_handler is None:
@@ -72,11 +83,12 @@ def _get_file_handler() -> logging.Handler:
     return _file_handler
 
 
-def _get_text_handler() -> logging.StreamHandler:
+def _get_text_handler() -> logging.StreamHandler[TextIO]:
     """Get or create the text handler.
 
     Returns:
         logging.StreamHandler: The stream handler for console logging.
+
     """
     global _text_handler  # pylint: disable=global-statement
     if _text_handler is None:
@@ -88,21 +100,23 @@ def _get_text_handler() -> logging.StreamHandler:
 class StorageHandler(logging.Handler):
     """Custom logging handler that stores logs in LogStorageService."""
 
-    def __init__(self, storage_service):
+    def __init__(self, storage_service: LogStorageService):
         """Initialize the storage handler.
 
         Args:
             storage_service: The LogStorageService instance to store logs in
+
         """
         super().__init__()
         self.storage = storage_service
-        self.loop = None
+        self.loop: AbstractEventLoop | None = None
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         """Emit a log record to storage.
 
         Args:
             record: The LogRecord to emit
+
         """
         if not self.storage:
             return
@@ -140,8 +154,8 @@ class StorageHandler(logging.Handler):
                     # No running loop, can't store
                     return
 
-            # Schedule the coroutine
-            asyncio.run_coroutine_threadsafe(
+            # Schedule the coroutine and store the future (fire-and-forget)
+            future = asyncio.run_coroutine_threadsafe(
                 self.storage.add_log(
                     level=log_level,
                     message=message,
@@ -153,9 +167,27 @@ class StorageHandler(logging.Handler):
                 ),
                 self.loop,
             )
+            # Add a done callback to catch any exceptions without blocking
+            future.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)
         except Exception:
             # Silently fail to avoid logging recursion
             pass  # nosec B110 - Intentional to prevent logging recursion
+
+
+class _LogMessageData(TypedDict):
+    """Log message data structure."""
+
+    level: LogLevel
+    data: Any
+    timestamp: str
+    logger: NotRequired[str]
+
+
+class _LogMessage(TypedDict):
+    """Log message event structure."""
+
+    type: str
+    data: _LogMessageData
 
 
 class LoggingService:
@@ -171,9 +203,10 @@ class LoggingService:
     def __init__(self) -> None:
         """Initialize logging service."""
         self._level = LogLevel.INFO
-        self._subscribers: List[asyncio.Queue] = []
+        self._subscribers: List[asyncio.Queue[_LogMessage]] = []
         self._loggers: Dict[str, logging.Logger] = {}
-        self._storage = None  # Will be initialized if admin UI is enabled
+        self._storage: LogStorageService | None = None  # Will be initialized if admin UI is enabled
+        self._storage_handler: Optional[StorageHandler] = None  # Track the storage handler for cleanup
 
     async def initialize(self) -> None:
         """Initialize logging service.
@@ -183,7 +216,11 @@ class LoggingService:
             >>> import asyncio
             >>> service = LoggingService()
             >>> asyncio.run(service.initialize())
+
         """
+        # Update service log level from settings BEFORE configuring loggers
+        self._level = LogLevel[settings.log_level.upper()]
+
         root_logger = logging.getLogger()
         self._loggers[""] = root_logger
 
@@ -215,14 +252,17 @@ class LoggingService:
             self._storage = LogStorageService()
 
             # Add storage handler to capture all logs
-            storage_handler = StorageHandler(self._storage)
-            storage_handler.setFormatter(text_formatter)
-            storage_handler.setLevel(getattr(logging, settings.log_level.upper()))
-            root_logger.addHandler(storage_handler)
+            self._storage_handler = StorageHandler(self._storage)
+            self._storage_handler.setFormatter(text_formatter)
+            self._storage_handler.setLevel(getattr(logging, settings.log_level.upper()))
+            root_logger.addHandler(self._storage_handler)
 
             logging.info(f"Log storage initialized with {settings.log_buffer_size_mb}MB buffer")
 
         logging.info("Logging service initialized")
+
+        # Suppress noisy upstream logs for normal stream closures in MCP streamable HTTP
+        self._install_closedresourceerror_filter()
 
     async def shutdown(self) -> None:
         """Shutdown logging service.
@@ -232,10 +272,104 @@ class LoggingService:
             >>> import asyncio
             >>> service = LoggingService()
             >>> asyncio.run(service.shutdown())
+
         """
+        # Remove storage handler from root logger if it was added
+        if self._storage_handler:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(self._storage_handler)
+            self._storage_handler = None
+
         # Clear subscribers
         self._subscribers.clear()
         logging.info("Logging service shutdown")
+
+    def _install_closedresourceerror_filter(self) -> None:
+        """Install a filter to drop benign ClosedResourceError logs from upstream MCP.
+
+        The MCP streamable HTTP server logs an ERROR when the in-memory channel is
+        closed during normal client disconnects, raising ``anyio.ClosedResourceError``.
+        This filter suppresses those specific records to keep logs clean.
+
+        Examples:
+            >>> # Initialize service (installs filter)
+            >>> import asyncio, logging, anyio
+            >>> service = LoggingService()
+            >>> asyncio.run(service.initialize())
+            >>> # Locate the installed filter on the target logger
+            >>> target = logging.getLogger('mcp.server.streamable_http')
+            >>> flts = [f for f in target.filters if f.__class__.__name__.endswith('SuppressClosedResourceErrorFilter')]
+            >>> len(flts) >= 1
+            True
+            >>> filt = flts[0]
+            >>> # Non-target logger should pass through even if message matches
+            >>> rec_other = logging.makeLogRecord({'name': 'other.logger', 'msg': 'ClosedResourceError'})
+            >>> filt.filter(rec_other)
+            True
+            >>> # Target logger with message containing ClosedResourceError should be suppressed
+            >>> rec_target_msg = logging.makeLogRecord({'name': 'mcp.server.streamable_http', 'msg': 'ClosedResourceError in normal shutdown'})
+            >>> filt.filter(rec_target_msg)
+            False
+            >>> # Target logger with ClosedResourceError in exc_info should be suppressed
+            >>> try:
+            ...     raise anyio.ClosedResourceError
+            ... except anyio.ClosedResourceError as e:
+            ...     rec_target_exc = logging.makeLogRecord({
+            ...         'name': 'mcp.server.streamable_http',
+            ...         'msg': 'Error in message router',
+            ...         'exc_info': (e.__class__, e, None),
+            ...     })
+            >>> filt.filter(rec_target_exc)
+            False
+            >>> # Cleanup
+            >>> asyncio.run(service.shutdown())
+
+        """
+
+        class _SuppressClosedResourceErrorFilter(logging.Filter):
+            """Filter to suppress ClosedResourceError exceptions from MCP streamable HTTP logger.
+
+            This filter prevents noisy ClosedResourceError exceptions from the upstream
+            MCP streamable HTTP implementation from cluttering the logs. These errors
+            are typically harmless connection cleanup events.
+            """
+
+            def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+                """Filter log records to suppress ClosedResourceError exceptions.
+
+                Args:
+                    record: The log record to evaluate
+
+                Returns:
+                    True to allow the record through, False to suppress it
+
+                """
+                # Apply only to upstream MCP streamable HTTP logger
+                if not record.name.startswith("mcp.server.streamable_http"):
+                    return True
+
+                # If exception info is present, check its type
+                exc_info = getattr(record, "exc_info", None)
+                if exc_info and AnyioClosedResourceError is not None:
+                    exc_type, exc, _tb = exc_info
+                    try:
+                        if isinstance(exc, AnyioClosedResourceError) or (getattr(exc_type, "__name__", "") == "ClosedResourceError"):
+                            return False
+                    except Exception:
+                        # Be permissive if anything goes wrong, don't drop logs accidentally
+                        return True
+
+                # Fallback: drop if message text clearly indicates ClosedResourceError
+                try:
+                    msg = record.getMessage()
+                    if "ClosedResourceError" in msg:
+                        return False
+                except Exception:
+                    pass  # nosec B110 - Intentional to prevent logging recursion
+                return True
+
+        target_logger = logging.getLogger("mcp.server.streamable_http")
+        target_logger.addFilter(_SuppressClosedResourceErrorFilter())
 
     def get_logger(self, name: str) -> logging.Logger:
         """Get or create logger instance.
@@ -253,6 +387,7 @@ class LoggingService:
             >>> import logging
             >>> isinstance(logger, logging.Logger)
             True
+
         """
         if name not in self._loggers:
             logger = logging.getLogger(name)
@@ -279,10 +414,11 @@ class LoggingService:
 
         Examples:
             >>> from mcpgateway.services.logging_service import LoggingService
-            >>> from mcpgateway.models import LogLevel
+            >>> from mcpgateway.common.models import LogLevel
             >>> import asyncio
             >>> service = LoggingService()
             >>> asyncio.run(service.set_level(LogLevel.DEBUG))
+
         """
         self._level = level
 
@@ -318,17 +454,18 @@ class LoggingService:
 
         Examples:
             >>> from mcpgateway.services.logging_service import LoggingService
-            >>> from mcpgateway.models import LogLevel
+            >>> from mcpgateway.common.models import LogLevel
             >>> import asyncio
             >>> service = LoggingService()
             >>> asyncio.run(service.notify('test', LogLevel.INFO))
+
         """
         # Skip if below current level
         if not self._should_log(level):
             return
 
         # Format notification message
-        message = {
+        message: _LogMessage = {
             "type": "log",
             "data": {
                 "level": level,
@@ -379,7 +516,7 @@ class LoggingService:
             except Exception as e:
                 logger.error(f"Failed to notify subscriber: {e}")
 
-    async def subscribe(self) -> AsyncGenerator[Dict[str, Any], None]:
+    async def subscribe(self) -> AsyncGenerator[_LogMessage, None]:
         """Subscribe to log messages.
 
         Returns a generator yielding log message events.
@@ -389,8 +526,9 @@ class LoggingService:
 
         Examples:
             This example was removed to prevent the test runner from hanging on async generator consumption.
+
         """
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue[_LogMessage] = asyncio.Queue()
         self._subscribers.append(queue)
         try:
             while True:
@@ -409,7 +547,7 @@ class LoggingService:
             True if should log
 
         Examples:
-            >>> from mcpgateway.models import LogLevel
+            >>> from mcpgateway.common.models import LogLevel
             >>> service = LoggingService()
             >>> service._level = LogLevel.WARNING
             >>> service._should_log(LogLevel.ERROR)
@@ -420,6 +558,7 @@ class LoggingService:
             True
             >>> service._should_log(LogLevel.DEBUG)
             False
+
         """
         level_values = {
             LogLevel.DEBUG: 0,
@@ -473,5 +612,6 @@ class LoggingService:
 
         Returns:
             LogStorageService instance or None if not initialized
+
         """
         return self._storage

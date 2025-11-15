@@ -1,3 +1,91 @@
+const MASKED_AUTH_VALUE = "*****";
+
+// Add three fields to passthrough section on Advanced button click
+function handleAddPassthrough() {
+    const passthroughContainer = safeGetElement("passthrough-container");
+    if (!passthroughContainer) {
+        console.error("Passthrough container not found");
+        return;
+    }
+
+    // Toggle visibility
+    if (
+        passthroughContainer.style.display === "none" ||
+        passthroughContainer.style.display === ""
+    ) {
+        passthroughContainer.style.display = "block";
+        // Add fields only if not already present
+        if (!document.getElementById("query-mapping-field")) {
+            const queryDiv = document.createElement("div");
+            queryDiv.className = "mb-4";
+            queryDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Query Mapping (JSON)</label>
+                <textarea id="query-mapping-field" name="query_mapping" class="mt-1 block w-full h-40 rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-black text-white" placeholder="{}"></textarea>
+            `;
+            passthroughContainer.appendChild(queryDiv);
+        }
+        if (!document.getElementById("header-mapping-field")) {
+            const headerDiv = document.createElement("div");
+            headerDiv.className = "mb-4";
+            headerDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Header Mapping (JSON)</label>
+                <textarea id="header-mapping-field" name="header_mapping" class="mt-1 block w-full h-40 rounded-md border border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 bg-black text-white" placeholder="{}"></textarea>
+            `;
+            passthroughContainer.appendChild(headerDiv);
+        }
+        if (!document.getElementById("timeout-ms-field")) {
+            const timeoutDiv = document.createElement("div");
+            timeoutDiv.className = "mb-4";
+            timeoutDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">timeout_ms (number)</label>
+                <input type="number" id="timeout-ms-field" name="timeout_ms" class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300" placeholder="30000" min="0" />
+            `;
+            passthroughContainer.appendChild(timeoutDiv);
+        }
+        if (!document.getElementById("expose-passthrough-field")) {
+            const exposeDiv = document.createElement("div");
+            exposeDiv.className = "mb-4";
+            exposeDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Expose Passthrough</label>
+                <select id="expose-passthrough-field" name="expose_passthrough" class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300">
+                    <option value="true" selected>True</option>
+                    <option value="false">False</option>
+                </select>
+            `;
+            passthroughContainer.appendChild(exposeDiv);
+        }
+        if (!document.getElementById("allowlist-field")) {
+            const allowlistDiv = document.createElement("div");
+            allowlistDiv.className = "mb-4";
+            allowlistDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Allowlist (comma-separated hosts/schemes)</label>
+                <input type="text" id="allowlist-field" name="allowlist" class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300" placeholder="[example.com, https://api.example.com]" />
+            `;
+            passthroughContainer.appendChild(allowlistDiv);
+        }
+        if (!document.getElementById("plugin-chain-pre-field")) {
+            const pluginPreDiv = document.createElement("div");
+            pluginPreDiv.className = "mb-4";
+            pluginPreDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Plugin Chain Pre</label>
+                <input type="text" id="plugin-chain-pre-field" name="plugin_chain_pre" class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300" placeholder="[]" />
+            `;
+            passthroughContainer.appendChild(pluginPreDiv);
+        }
+        if (!document.getElementById("plugin-chain-post-field")) {
+            const pluginPostDiv = document.createElement("div");
+            pluginPostDiv.className = "mb-4";
+            pluginPostDiv.innerHTML = `
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-400 mb-1">Plugin Chain Post (optional, override defaults)</label>
+                <input type="text" id="plugin-chain-post-field" name="plugin_chain_post" class="mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:text-gray-300" placeholder="[]" />
+            `;
+            passthroughContainer.appendChild(pluginPostDiv);
+        }
+    } else {
+        passthroughContainer.style.display = "none";
+    }
+}
+
 // Make URL field read-only for integration type MCP
 function updateEditToolUrl() {
     const editTypeField = document.getElementById("edit-tool-type");
@@ -18,6 +106,20 @@ document.addEventListener("DOMContentLoaded", function () {
         TypeField.addEventListener("change", updateEditToolUrl);
         // Set initial state
         updateEditToolUrl();
+    }
+
+    // Initialize CA certificate upload immediately
+    initializeCACertUpload();
+
+    // Also try to initialize after a short delay (in case the panel loads later)
+    setTimeout(initializeCACertUpload, 500);
+
+    // Re-initialize when switching to gateways tab
+    const gatewaysTab = document.querySelector('[onclick*="gateways"]');
+    if (gatewaysTab) {
+        gatewaysTab.addEventListener("click", function () {
+            setTimeout(initializeCACertUpload, 100);
+        });
     }
 });
 /**
@@ -252,8 +354,12 @@ function isInactiveChecked(type) {
 }
 
 // Enhanced fetch with timeout and better error handling
-function fetchWithTimeout(url, options = {}, timeout = 30000) {
-    // Increased from 10000
+function fetchWithTimeout(
+    url,
+    options = {},
+    timeout = window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000,
+) {
+    // Use configurable timeout from window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
         console.warn(`Request to ${url} timed out after ${timeout}ms`);
@@ -568,6 +674,8 @@ function closeModal(modalId, clearId = null) {
             cleanupGatewayTestModal();
         } else if (modalId === "tool-test-modal") {
             cleanupToolTestModal(); // ADD THIS LINE
+        } else if (modalId === "prompt-test-modal") {
+            cleanupPromptTestModal();
         }
 
         modal.classList.add("hidden");
@@ -661,7 +769,7 @@ async function loadMetricsInternal() {
         const result = await fetchWithTimeoutAndRetry(
             `${window.ROOT_PATH}/admin/metrics`,
             {}, // options
-            45000, // Increased timeout specifically for metrics (was 20000)
+            (window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000) * 1.5, // Use 1.5x configurable timeout for metrics
             MAX_METRICS_RETRIES,
         );
 
@@ -711,7 +819,7 @@ async function loadMetricsInternal() {
 async function fetchWithTimeoutAndRetry(
     url,
     options = {},
-    timeout = 20000,
+    timeout = window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000,
     maxRetries = 3,
 ) {
     let lastError;
@@ -770,8 +878,12 @@ async function fetchWithTimeoutAndRetry(
  * Show loading state for metrics
  */
 function showMetricsLoading() {
-    const metricsPanel = safeGetElement("metrics-panel", true); // suppress warning
-    if (metricsPanel) {
+    // Only clear the aggregated metrics section, not the entire panel (to preserve System Metrics)
+    const aggregatedSection = safeGetElement(
+        "aggregated-metrics-section",
+        true,
+    );
+    if (aggregatedSection) {
         const existingLoading = safeGetElement("metrics-loading", true);
         if (existingLoading) {
             return;
@@ -783,12 +895,12 @@ function showMetricsLoading() {
         loadingDiv.innerHTML = `
             <div class="text-center">
                 <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                <p class="text-gray-600">Loading metrics...</p>
+                <p class="text-gray-600">Loading aggregated metrics...</p>
                 <p class="text-sm text-gray-500 mt-2">This may take a moment</p>
             </div>
         `;
-        metricsPanel.innerHTML = "";
-        metricsPanel.appendChild(loadingDiv);
+        aggregatedSection.innerHTML = "";
+        aggregatedSection.appendChild(loadingDiv);
     }
 }
 
@@ -806,8 +918,9 @@ function hideMetricsLoading() {
  * Enhanced error display with retry option
  */
 function showMetricsError(error) {
-    const metricsPanel = safeGetElement("metrics-panel");
-    if (metricsPanel) {
+    // Only show error in the aggregated metrics section, not the entire panel
+    const aggregatedSection = safeGetElement("aggregated-metrics-section");
+    if (aggregatedSection) {
         const errorDiv = document.createElement("div");
         errorDiv.className = "text-center p-8";
 
@@ -829,7 +942,7 @@ function showMetricsError(error) {
                 <svg class="w-12 h-12 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <h3 class="text-lg font-medium mb-2">Failed to Load Metrics</h3>
+                <h3 class="text-lg font-medium mb-2">Failed to Load Aggregated Metrics</h3>
                 <p class="text-sm mb-2">${escapeHtml(errorMessage)}</p>
                 <p class="text-xs text-gray-500 mb-4">${helpText}</p>
                 <button
@@ -840,8 +953,8 @@ function showMetricsError(error) {
             </div>
         `;
 
-        metricsPanel.innerHTML = "";
-        metricsPanel.appendChild(errorDiv);
+        aggregatedSection.innerHTML = "";
+        aggregatedSection.appendChild(errorDiv);
     }
 }
 
@@ -860,14 +973,14 @@ function retryLoadMetrics() {
 window.retryLoadMetrics = retryLoadMetrics;
 
 function showMetricsPlaceholder() {
-    const metricsPanel = safeGetElement("metrics-panel");
-    if (metricsPanel) {
+    const aggregatedSection = safeGetElement("aggregated-metrics-section");
+    if (aggregatedSection) {
         const placeholderDiv = document.createElement("div");
         placeholderDiv.className = "text-gray-600 p-4 text-center";
         placeholderDiv.textContent =
-            "Metrics endpoint not available. This feature may not be implemented yet.";
-        metricsPanel.innerHTML = "";
-        metricsPanel.appendChild(placeholderDiv);
+            "Aggregated metrics endpoint not available. This feature may not be implemented yet.";
+        aggregatedSection.innerHTML = "";
+        aggregatedSection.appendChild(placeholderDiv);
     }
 }
 
@@ -876,9 +989,9 @@ function showMetricsPlaceholder() {
 // ===================================================================
 
 function displayMetrics(data) {
-    const metricsPanel = safeGetElement("metrics-panel");
-    if (!metricsPanel) {
-        console.error("Metrics panel element not found");
+    const aggregatedSection = safeGetElement("aggregated-metrics-section");
+    if (!aggregatedSection) {
+        console.error("Aggregated metrics section element not found");
         return;
     }
 
@@ -897,8 +1010,8 @@ function displayMetrics(data) {
                     Refresh Metrics
                 </button>
             `;
-            metricsPanel.innerHTML = "";
-            metricsPanel.appendChild(emptyStateDiv);
+            aggregatedSection.innerHTML = "";
+            aggregatedSection.appendChild(emptyStateDiv);
             return;
         }
 
@@ -983,8 +1096,8 @@ function displayMetrics(data) {
         }
 
         // Safe content replacement
-        metricsPanel.innerHTML = "";
-        metricsPanel.appendChild(mainContainer);
+        aggregatedSection.innerHTML = "";
+        aggregatedSection.appendChild(mainContainer);
 
         console.log("✓ Enhanced metrics display rendered successfully");
     } catch (error) {
@@ -1095,7 +1208,6 @@ function createKPISection(kpiData) {
         const section = document.createElement("div");
         section.className = "grid grid-cols-1 md:grid-cols-4 gap-4";
 
-        // Define KPI indicators with safe configuration
         const kpis = [
             {
                 key: "totalExecutions",
@@ -1108,26 +1220,35 @@ function createKPISection(kpiData) {
                 label: "Success Rate",
                 icon: "✅",
                 color: "green",
-                suffix: "%",
             },
             {
                 key: "avgResponseTime",
                 label: "Avg Response Time",
                 icon: "⚡",
                 color: "yellow",
-                suffix: "ms",
             },
-            {
-                key: "errorRate",
-                label: "Error Rate",
-                icon: "❌",
-                color: "red",
-                suffix: "%",
-            },
+            { key: "errorRate", label: "Error Rate", icon: "❌", color: "red" },
         ];
 
         kpis.forEach((kpi) => {
-            const value = kpiData[kpi.key] ?? "N/A";
+            let value = kpiData[kpi.key];
+            if (value === null || value === undefined || value === "N/A") {
+                value = "N/A";
+            } else {
+                if (kpi.key === "avgResponseTime") {
+                    // ensure numeric then 3 decimals + unit
+                    value = isNaN(Number(value))
+                        ? "N/A"
+                        : Number(value).toFixed(3) + " ms";
+                } else if (
+                    kpi.key === "successRate" ||
+                    kpi.key === "errorRate"
+                ) {
+                    value = String(value) + "%";
+                } else {
+                    value = String(value);
+                }
+            }
 
             const kpiCard = document.createElement("div");
             kpiCard.className = `bg-white rounded-lg shadow p-4 border-l-4 border-${kpi.color}-500 dark:bg-gray-800`;
@@ -1144,8 +1265,7 @@ function createKPISection(kpiData) {
 
             const valueSpan = document.createElement("div");
             valueSpan.className = `text-2xl font-bold text-${kpi.color}-600`;
-            valueSpan.textContent =
-                (value === "N/A" ? "N/A" : String(value)) + (kpi.suffix || "");
+            valueSpan.textContent = value;
 
             const labelSpan = document.createElement("div");
             labelSpan.className = "text-sm text-gray-500 dark:text-gray-400";
@@ -1160,73 +1280,205 @@ function createKPISection(kpiData) {
         });
 
         return section;
-    } catch (error) {
-        console.error("Error creating KPI section:", error);
-        return document.createElement("div"); // Safe fallback
+    } catch (err) {
+        console.error("Error creating KPI section:", err);
+        return document.createElement("div");
     }
 }
 
 /**
  * SECURITY: Extract and calculate KPI data with validation
  */
+function formatValue(value, key) {
+    if (value === null || value === undefined || value === "N/A") {
+        return "N/A";
+    }
+
+    if (key === "avgResponseTime") {
+        return isNaN(Number(value)) ? "N/A" : Number(value).toFixed(3) + " ms";
+    }
+
+    if (key === "successRate" || key === "errorRate") {
+        return `${value}%`;
+    }
+
+    if (typeof value === "number" && Number.isNaN(value)) {
+        return "N/A";
+    }
+
+    return String(value).trim() === "" ? "N/A" : String(value);
+}
+
 function extractKPIData(data) {
     try {
-        const kpiData = {};
-
-        // Initialize calculation variables
         let totalExecutions = 0;
         let totalSuccessful = 0;
         let totalFailed = 0;
-        const responseTimes = [];
+        let weightedResponseSum = 0;
 
-        // Process each category safely
-        const categories = [
-            "tools",
-            "resources",
-            "prompts",
-            "gateways",
-            "servers",
+        const categoryKeys = [
+            ["tools", "Tools Metrics", "Tools", "tools_metrics"],
+            [
+                "resources",
+                "Resources Metrics",
+                "Resources",
+                "resources_metrics",
+            ],
+            ["prompts", "Prompts Metrics", "Prompts", "prompts_metrics"],
+            ["servers", "Servers Metrics", "Servers", "servers_metrics"],
+            ["gateways", "Gateways Metrics", "Gateways", "gateways_metrics"],
+            [
+                "virtualServers",
+                "Virtual Servers",
+                "VirtualServers",
+                "virtual_servers",
+            ],
         ];
-        categories.forEach((category) => {
-            if (data[category]) {
-                const categoryData = data[category];
-                totalExecutions += Number(categoryData.totalExecutions || 0);
-                totalSuccessful += Number(
-                    categoryData.successfulExecutions || 0,
-                );
-                totalFailed += Number(categoryData.failedExecutions || 0);
 
-                if (
-                    categoryData.avgResponseTime &&
-                    categoryData.avgResponseTime !== "N/A"
-                ) {
-                    responseTimes.push(Number(categoryData.avgResponseTime));
+        categoryKeys.forEach((aliases) => {
+            let categoryData = null;
+            for (const key of aliases) {
+                if (data && data[key]) {
+                    categoryData = data[key];
+                    break;
                 }
+            }
+            if (!categoryData) {
+                return;
+            }
+
+            // Build a lowercase-key map so "Successful Executions" and "successfulExecutions" both match
+            const normalized = {};
+            Object.entries(categoryData).forEach(([k, v]) => {
+                normalized[k.toString().trim().toLowerCase()] = v;
+            });
+
+            const executions = Number(
+                normalized["total executions"] ??
+                    normalized.totalexecutions ??
+                    normalized.execution_count ??
+                    normalized["execution-count"] ??
+                    normalized.executions ??
+                    normalized.total_executions ??
+                    0,
+            );
+
+            const successful = Number(
+                normalized["successful executions"] ??
+                    normalized.successfulexecutions ??
+                    normalized.successful ??
+                    normalized.successful_executions ??
+                    0,
+            );
+
+            const failed = Number(
+                normalized["failed executions"] ??
+                    normalized.failedexecutions ??
+                    normalized.failed ??
+                    normalized.failed_executions ??
+                    0,
+            );
+
+            const avgResponseRaw =
+                normalized["average response time"] ??
+                normalized.avgresponsetime ??
+                normalized.avg_response_time ??
+                normalized.avgresponsetime ??
+                null;
+
+            totalExecutions += Number.isNaN(executions) ? 0 : executions;
+            totalSuccessful += Number.isNaN(successful) ? 0 : successful;
+            totalFailed += Number.isNaN(failed) ? 0 : failed;
+
+            if (
+                avgResponseRaw !== null &&
+                avgResponseRaw !== undefined &&
+                avgResponseRaw !== "N/A" &&
+                !Number.isNaN(Number(avgResponseRaw)) &&
+                executions > 0
+            ) {
+                weightedResponseSum += executions * Number(avgResponseRaw);
             }
         });
 
-        // Calculate safe aggregate metrics
-        kpiData.totalExecutions = totalExecutions;
-        kpiData.successRate =
+        const avgResponseTime =
+            totalExecutions > 0 && weightedResponseSum > 0
+                ? weightedResponseSum / totalExecutions
+                : null;
+
+        const successRate =
             totalExecutions > 0
                 ? Math.round((totalSuccessful / totalExecutions) * 100)
                 : 0;
-        kpiData.errorRate =
+
+        const errorRate =
             totalExecutions > 0
                 ? Math.round((totalFailed / totalExecutions) * 100)
                 : 0;
-        kpiData.avgResponseTime =
-            responseTimes.length > 0
-                ? Math.round(
-                      responseTimes.reduce((a, b) => a + b, 0) /
-                          responseTimes.length,
-                  )
-                : "N/A";
 
-        return kpiData;
-    } catch (error) {
-        console.error("Error extracting KPI data:", error);
-        return {}; // Safe fallback
+        // Debug: show what we've read from the payload
+        console.log("KPI Totals:", {
+            totalExecutions,
+            totalSuccessful,
+            totalFailed,
+            successRate,
+            errorRate,
+            avgResponseTime,
+        });
+
+        return { totalExecutions, successRate, errorRate, avgResponseTime };
+    } catch (err) {
+        console.error("Error extracting KPI data:", err);
+        return {
+            totalExecutions: 0,
+            successRate: 0,
+            errorRate: 0,
+            avgResponseTime: null,
+        };
+    }
+}
+
+// eslint-disable-next-line no-unused-vars
+function updateKPICards(kpiData) {
+    try {
+        if (!kpiData) {
+            return;
+        }
+
+        const idMap = {
+            "metrics-total-executions": formatValue(
+                kpiData.totalExecutions,
+                "totalExecutions",
+            ),
+            "metrics-success-rate": formatValue(
+                kpiData.successRate,
+                "successRate",
+            ),
+            "metrics-avg-response-time": formatValue(
+                kpiData.avgResponseTime,
+                "avgResponseTime",
+            ),
+            "metrics-error-rate": formatValue(kpiData.errorRate, "errorRate"),
+        };
+
+        Object.entries(idMap).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (!el) {
+                return;
+            }
+
+            // If card has a `.value` span inside, update it, else update directly
+            const valueEl =
+                el.querySelector?.(".value") ||
+                el.querySelector?.(".kpi-value");
+            if (valueEl) {
+                valueEl.textContent = value;
+            } else {
+                el.textContent = value;
+            }
+        });
+    } catch (err) {
+        console.error("updateKPICards error:", err);
     }
 }
 
@@ -1383,26 +1635,39 @@ function formatLastUsed(timestamp) {
         return "Never";
     }
 
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
+    let date;
+    if (typeof timestamp === "number" || /^\d+$/.test(timestamp)) {
+        const num = Number(timestamp);
+        date = new Date(num < 1e12 ? num * 1000 : num); // epoch seconds or ms
+    } else {
+        date = new Date(timestamp.endsWith("Z") ? timestamp : timestamp + "Z");
+    }
 
-    if (diffMins < 1) {
+    if (isNaN(date.getTime())) {
+        return "Never";
+    }
+
+    const now = Date.now();
+    const diff = now - date.getTime();
+
+    if (diff < 60 * 1000) {
         return "Just now";
     }
-    if (diffMins < 60) {
-        return `${diffMins} min ago`;
-    }
-    if (diffMins < 1440) {
-        return `${Math.floor(diffMins / 60)} hours ago`;
-    }
-    if (diffMins < 10080) {
-        return `${Math.floor(diffMins / 1440)} days ago`;
+    if (diff < 60 * 60 * 1000) {
+        return `${Math.floor(diff / 60000)} min ago`;
     }
 
-    return date.toLocaleDateString();
+    return date.toLocaleString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
 }
+
 function createTopPerformersTable(entityType, data, isActive) {
     const panel = document.createElement("div");
     panel.id = `top-${entityType}-panel`;
@@ -1983,6 +2248,34 @@ async function editTool(toolId) {
             tagsField.value = tool.tags ? tool.tags.join(", ") : "";
         }
 
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        if (teamId) {
+            const hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "team_id";
+            hiddenInput.value = teamId;
+            editForm.appendChild(hiddenInput);
+        }
+
+        const visibility = tool.visibility; // Ensure visibility is either 'public', 'team', or 'private'
+        const publicRadio = safeGetElement("edit-tool-visibility-public");
+        const teamRadio = safeGetElement("edit-tool-visibility-team");
+        const privateRadio = safeGetElement("edit-tool-visibility-private");
+
+        if (visibility) {
+            // Check visibility and set the corresponding radio button
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
+        }
+
         // Handle JSON fields safely with validation
         const headersValidation = validateJson(
             JSON.stringify(tool.headers || {}),
@@ -1992,6 +2285,10 @@ async function editTool(toolId) {
             JSON.stringify(tool.inputSchema || {}),
             "Schema",
         );
+        const outputSchemaValidation = validateJson(
+            tool.outputSchema ? JSON.stringify(tool.outputSchema) : "",
+            "Output Schema",
+        );
         const annotationsValidation = validateJson(
             JSON.stringify(tool.annotations || {}),
             "Annotations",
@@ -1999,6 +2296,7 @@ async function editTool(toolId) {
 
         const headersField = safeGetElement("edit-tool-headers");
         const schemaField = safeGetElement("edit-tool-schema");
+        const outputSchemaField = safeGetElement("edit-tool-output-schema");
         const annotationsField = safeGetElement("edit-tool-annotations");
 
         if (headersField && headersValidation.valid) {
@@ -2010,6 +2308,15 @@ async function editTool(toolId) {
         }
         if (schemaField && schemaValidation.valid) {
             schemaField.value = JSON.stringify(schemaValidation.value, null, 2);
+        }
+        if (outputSchemaField) {
+            if (tool.outputSchema) {
+                outputSchemaField.value = outputSchemaValidation.valid
+                    ? JSON.stringify(outputSchemaValidation.value, null, 2)
+                    : "";
+            } else {
+                outputSchemaField.value = "";
+            }
         }
         if (annotationsField && annotationsValidation.valid) {
             annotationsField.value = JSON.stringify(
@@ -2031,6 +2338,16 @@ async function editTool(toolId) {
                 JSON.stringify(schemaValidation.value, null, 2),
             );
             window.editToolSchemaEditor.refresh();
+        }
+        if (window.editToolOutputSchemaEditor) {
+            if (tool.outputSchema && outputSchemaValidation.valid) {
+                window.editToolOutputSchemaEditor.setValue(
+                    JSON.stringify(outputSchemaValidation.value, null, 2),
+                );
+            } else {
+                window.editToolOutputSchemaEditor.setValue("");
+            }
+            window.editToolOutputSchemaEditor.refresh();
         }
 
         // Prefill integration type from DB and set request types accordingly
@@ -2113,6 +2430,12 @@ async function editTool(toolId) {
                 if (window.editToolSchemaEditor) {
                     window.editToolSchemaEditor.setOption("readOnly", true);
                 }
+                if (window.editToolOutputSchemaEditor) {
+                    window.editToolOutputSchemaEditor.setOption(
+                        "readOnly",
+                        true,
+                    );
+                }
             } else {
                 typeField.disabled = false;
                 if (authTypeField) {
@@ -2135,6 +2458,12 @@ async function editTool(toolId) {
                 }
                 if (window.editToolSchemaEditor) {
                     window.editToolSchemaEditor.setOption("readOnly", false);
+                }
+                if (window.editToolOutputSchemaEditor) {
+                    window.editToolOutputSchemaEditor.setOption(
+                        "readOnly",
+                        false,
+                    );
                 }
             }
             // Update request types and URL field
@@ -2165,6 +2494,18 @@ async function editTool(toolId) {
         const authHeaderValueField = authHeadersSection?.querySelector(
             "input[name='auth_header_value']",
         );
+        const authHeadersContainer = document.getElementById(
+            "auth-headers-container-gw-edit",
+        );
+        const authHeadersJsonInput = document.getElementById(
+            "auth-headers-json-gw-edit",
+        );
+        if (authHeadersContainer) {
+            authHeadersContainer.innerHTML = "";
+        }
+        if (authHeadersJsonInput) {
+            authHeadersJsonInput.value = "";
+        }
 
         // Hide all auth sections first
         if (authBasicSection) {
@@ -2246,6 +2587,9 @@ async function editTool(toolId) {
             if (window.editToolSchemaEditor) {
                 window.editToolSchemaEditor.refresh();
             }
+            if (window.editToolOutputSchemaEditor) {
+                window.editToolOutputSchemaEditor.refresh();
+            }
         }, 100);
 
         console.log("✓ Tool edit modal loaded successfully");
@@ -2253,6 +2597,560 @@ async function editTool(toolId) {
         console.error("Error fetching tool details for editing:", error);
         const errorMessage = handleFetchError(error, "load tool for editing");
         showErrorMessage(errorMessage);
+    }
+}
+
+/**
+ * SECURE: View A2A Agents function with safe display
+ */
+
+async function viewAgent(agentId) {
+    try {
+        console.log(`Viewing agent ID: ${agentId}`);
+
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH}/admin/a2a/${agentId}`,
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const agent = await response.json();
+
+        const agentDetailsDiv = safeGetElement("agent-details");
+        if (agentDetailsDiv) {
+            const container = document.createElement("div");
+            container.className =
+                "space-y-2 dark:bg-gray-900 dark:text-gray-100";
+
+            const fields = [
+                { label: "Name", value: agent.name },
+                { label: "Slug", value: agent.slug },
+                { label: "Endpoint URL", value: agent.endpointUrl },
+                { label: "Agent Type", value: agent.agentType },
+                { label: "Protocol Version", value: agent.protocolVersion },
+                { label: "Description", value: agent.description || "N/A" },
+                { label: "Visibility", value: agent.visibility || "private" },
+            ];
+
+            // Tags
+            const tagsP = document.createElement("p");
+            const tagsStrong = document.createElement("strong");
+            tagsStrong.textContent = "Tags: ";
+            tagsP.appendChild(tagsStrong);
+            if (agent.tags && agent.tags.length > 0) {
+                agent.tags.forEach((tag) => {
+                    const tagSpan = document.createElement("span");
+                    tagSpan.className =
+                        "inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mr-1";
+                    tagSpan.textContent = tag;
+                    tagsP.appendChild(tagSpan);
+                });
+            } else {
+                tagsP.appendChild(document.createTextNode("No tags"));
+            }
+            container.appendChild(tagsP);
+
+            // Render basic fields
+            fields.forEach((field) => {
+                const p = document.createElement("p");
+                const strong = document.createElement("strong");
+                strong.textContent = field.label + ": ";
+                p.appendChild(strong);
+                p.appendChild(document.createTextNode(field.value));
+                container.appendChild(p);
+            });
+
+            // Status
+            const statusP = document.createElement("p");
+            const statusStrong = document.createElement("strong");
+            statusStrong.textContent = "Status: ";
+            statusP.appendChild(statusStrong);
+
+            const statusSpan = document.createElement("span");
+            let statusText = "";
+            let statusClass = "";
+            let statusIcon = "";
+
+            if (!agent.enabled) {
+                statusText = "Inactive";
+                statusClass = "bg-red-100 text-red-800";
+                statusIcon = `
+                    <svg class="ml-1 h-4 w-4 text-red-600 self-center" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M6.293 6.293a1 1 0 011.414 0L10 8.586l2.293-2.293a1 1 0 111.414 1.414L11.414 10l2.293 2.293a1 1 0 11-1.414 1.414L10 11.414l-2.293 2.293a1 1 0 11-1.414-1.414L8.586 10 6.293 7.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                      </svg>`;
+            } else if (agent.enabled && agent.reachable) {
+                statusText = "Active";
+                statusClass = "bg-green-100 text-green-800";
+                statusIcon = `
+                    <svg class="ml-1 h-4 w-4 text-green-600 self-center" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-4.586l5.293-5.293-1.414-1.414L9 11.586 7.121 9.707 5.707 11.121 9 14.414z" clip-rule="evenodd"></path>
+                      </svg>`;
+            } else if (agent.enabled && !agent.reachable) {
+                statusText = "Offline";
+                statusClass = "bg-yellow-100 text-yellow-800";
+                statusIcon = `
+                    <svg class="ml-1 h-4 w-4 text-yellow-600 self-center" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-10h2v4h-2V8zm0 6h2v2h-2v-2z" clip-rule="evenodd"></path>
+                      </svg>`;
+            }
+
+            statusSpan.className = `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}`;
+            statusSpan.innerHTML = `${statusText} ${statusIcon}`;
+            statusP.appendChild(statusSpan);
+            container.appendChild(statusP);
+
+            // Capabilities + Config (JSON formatted)
+            const capConfigDiv = document.createElement("div");
+            capConfigDiv.className =
+                "mt-4 p-2 bg-gray-50 dark:bg-gray-800 rounded";
+            const capTitle = document.createElement("strong");
+            capTitle.textContent = "Capabilities & Config:";
+            capConfigDiv.appendChild(capTitle);
+
+            const pre = document.createElement("pre");
+            pre.className = "text-xs mt-1 whitespace-pre-wrap break-words";
+            pre.textContent = JSON.stringify(
+                { capabilities: agent.capabilities, config: agent.config },
+                null,
+                2,
+            );
+            capConfigDiv.appendChild(pre);
+            container.appendChild(capConfigDiv);
+
+            // Metadata
+            const metadataDiv = document.createElement("div");
+            metadataDiv.className = "mt-6 border-t pt-4";
+
+            const metadataTitle = document.createElement("strong");
+            metadataTitle.textContent = "Metadata:";
+            metadataDiv.appendChild(metadataTitle);
+
+            const metadataGrid = document.createElement("div");
+            metadataGrid.className = "grid grid-cols-2 gap-4 mt-2 text-sm";
+
+            const metadataFields = [
+                {
+                    label: "Created By",
+                    value:
+                        agent.created_by || agent.createdBy || "Legacy Entity",
+                },
+                {
+                    label: "Created At",
+                    value:
+                        agent.created_at || agent.createdAt
+                            ? new Date(
+                                  agent.created_at || agent.createdAt,
+                              ).toLocaleString()
+                            : "Pre-metadata",
+                },
+                {
+                    label: "Created From IP",
+                    value:
+                        agent.created_from_ip ||
+                        agent.createdFromIp ||
+                        "Unknown",
+                },
+                {
+                    label: "Created Via",
+                    value: agent.created_via || agent.createdVia || "Unknown",
+                },
+                {
+                    label: "Last Modified By",
+                    value: agent.modified_by || agent.modifiedBy || "N/A",
+                },
+                {
+                    label: "Last Modified At",
+                    value:
+                        agent.updated_at || agent.updatedAt
+                            ? new Date(
+                                  agent.updated_at || agent.updatedAt,
+                              ).toLocaleString()
+                            : "N/A",
+                },
+                {
+                    label: "Modified From IP",
+                    value:
+                        agent.modified_from_ip || agent.modifiedFromIp || "N/A",
+                },
+                {
+                    label: "Modified Via",
+                    value: agent.modified_via || agent.modifiedVia || "N/A",
+                },
+                { label: "Version", value: agent.version || "1" },
+                {
+                    label: "Import Batch",
+                    value: agent.importBatchId || "N/A",
+                },
+            ];
+
+            metadataFields.forEach((field) => {
+                const fieldDiv = document.createElement("div");
+
+                const labelSpan = document.createElement("span");
+                labelSpan.className =
+                    "font-medium text-gray-600 dark:text-gray-400";
+                labelSpan.textContent = field.label + ":";
+
+                const valueSpan = document.createElement("span");
+                valueSpan.className = "ml-2";
+                valueSpan.textContent = field.value;
+
+                fieldDiv.appendChild(labelSpan);
+                fieldDiv.appendChild(valueSpan);
+                metadataGrid.appendChild(fieldDiv);
+            });
+
+            metadataDiv.appendChild(metadataGrid);
+            container.appendChild(metadataDiv);
+
+            agentDetailsDiv.innerHTML = "";
+            agentDetailsDiv.appendChild(container);
+        }
+
+        openModal("agent-modal");
+        const modal = document.getElementById("agent-modal");
+        if (modal && modal.classList.contains("hidden")) {
+            console.warn("Modal was still hidden — forcing visible.");
+            modal.classList.remove("hidden");
+        }
+
+        console.log("✓ Agent details loaded successfully");
+    } catch (error) {
+        console.error("Error fetching agent details:", error);
+        const errorMessage = handleFetchError(error, "load agent details");
+        showErrorMessage(errorMessage);
+    }
+}
+
+/**
+ * SECURE: Edit A2A Agent function
+ */
+
+async function editA2AAgent(agentId) {
+    try {
+        console.log(`Editing A2A Agent ID: ${agentId}`);
+
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH}/admin/a2a/${agentId}`,
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const agent = await response.json();
+
+        console.log("Agent Details: " + JSON.stringify(agent, null, 2));
+
+        // for (const [key, value] of Object.entries(agent)) {
+        //       console.log(`${key}:`, value);
+        //     }
+
+        const isInactiveCheckedBool = isInactiveChecked("a2a-agents");
+        const editForm = safeGetElement("edit-a2a-agent-form");
+        let hiddenField = safeGetElement("edit-a2a-agents-show-inactive");
+        if (!hiddenField) {
+            hiddenField = document.createElement("input");
+            hiddenField.type = "hidden";
+            hiddenField.name = "is_inactivate_checked";
+            hiddenField.id = "edit-a2a-agents-show-inactive";
+
+            if (editForm) {
+                editForm.appendChild(hiddenField);
+            }
+        }
+        hiddenField.value = isInactiveCheckedBool;
+
+        // Set form action and populate fields with validation
+
+        if (editForm) {
+            editForm.action = `${window.ROOT_PATH}/admin/a2a/${agentId}/edit`;
+            editForm.method = "POST"; // ensure method is POST
+        }
+
+        const nameValidation = validateInputName(agent.name, "a2a_agent");
+        const urlValidation = validateUrl(agent.endpointUrl);
+
+        const nameField = safeGetElement("a2a-agent-name-edit");
+        const urlField = safeGetElement("a2a-agent-endpoint-url-edit");
+        const descField = safeGetElement("a2a-agent-description-edit");
+        const agentType = safeGetElement("a2a-agent-type-edit");
+
+        agentType.value = agent.agentType;
+
+        console.log("Agent Type: ", agent.agentType);
+
+        if (nameField && nameValidation.valid) {
+            nameField.value = nameValidation.value;
+        }
+        if (urlField && urlValidation.valid) {
+            urlField.value = urlValidation.value;
+        }
+        if (descField) {
+            descField.value = agent.description || "";
+        }
+
+        // Set tags field
+        const tagsField = safeGetElement("a2a-agent-tags-edit");
+        if (tagsField) {
+            tagsField.value = agent.tags ? agent.tags.join(", ") : "";
+        }
+
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        if (teamId) {
+            const hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "team_id";
+            hiddenInput.value = teamId;
+            editForm.appendChild(hiddenInput);
+        }
+
+        // ✅ Prefill visibility radios (consistent with server)
+        const visibility = agent.visibility
+            ? agent.visibility.toLowerCase()
+            : null;
+
+        const publicRadio = safeGetElement("a2a-visibility-public-edit");
+        const teamRadio = safeGetElement("a2a-visibility-team-edit");
+        const privateRadio = safeGetElement("a2a-visibility-private-edit");
+
+        // Clear all first
+        if (publicRadio) {
+            publicRadio.checked = false;
+        }
+        if (teamRadio) {
+            teamRadio.checked = false;
+        }
+        if (privateRadio) {
+            privateRadio.checked = false;
+        }
+
+        if (visibility) {
+            // Check visibility and set the corresponding radio button
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
+        }
+
+        const authTypeField = safeGetElement("auth-type-a2a-edit");
+
+        if (authTypeField) {
+            authTypeField.value = agent.authType || "";
+        }
+
+        toggleA2AAuthFields(agent.authType || "");
+
+        // Auth containers
+        const authBasicSection = safeGetElement("auth-basic-fields-a2a-edit");
+        const authBearerSection = safeGetElement("auth-bearer-fields-a2a-edit");
+        const authHeadersSection = safeGetElement(
+            "auth-headers-fields-a2a-edit",
+        );
+        const authOAuthSection = safeGetElement("auth-oauth-fields-a2a-edit");
+
+        // Individual fields
+        const authUsernameField = safeGetElement(
+            "auth-basic-fields-a2a-edit",
+        )?.querySelector("input[name='auth_username']");
+        const authPasswordField = safeGetElement(
+            "auth-basic-fields-a2a-edit",
+        )?.querySelector("input[name='auth_password']");
+
+        const authTokenField = safeGetElement(
+            "auth-bearer-fields-a2a-edit",
+        )?.querySelector("input[name='auth_token']");
+
+        const authHeaderKeyField = safeGetElement(
+            "auth-headers-fields-a2a-edit",
+        )?.querySelector("input[name='auth_header_key']");
+        const authHeaderValueField = safeGetElement(
+            "auth-headers-fields-a2a-edit",
+        )?.querySelector("input[name='auth_header_value']");
+
+        // OAuth fields
+        const oauthGrantTypeField = safeGetElement("oauth-grant-type-a2a-edit");
+        const oauthClientIdField = safeGetElement("oauth-client-id-a2a-edit");
+        const oauthClientSecretField = safeGetElement(
+            "oauth-client-secret-a2a-edit",
+        );
+        const oauthTokenUrlField = safeGetElement("oauth-token-url-a2a-edit");
+        const oauthAuthUrlField = safeGetElement(
+            "oauth-authorization-url-a2a-edit",
+        );
+        const oauthRedirectUriField = safeGetElement(
+            "oauth-redirect-uri-a2a-edit",
+        );
+        const oauthScopesField = safeGetElement("oauth-scopes-a2a-edit");
+        const oauthAuthCodeFields = safeGetElement(
+            "oauth-auth-code-fields-a2a-edit",
+        );
+
+        // Hide all auth sections first
+        if (authBasicSection) {
+            authBasicSection.style.display = "none";
+        }
+        if (authBearerSection) {
+            authBearerSection.style.display = "none";
+        }
+        if (authHeadersSection) {
+            authHeadersSection.style.display = "none";
+        }
+        if (authOAuthSection) {
+            authOAuthSection.style.display = "none";
+        }
+
+        switch (agent.authType) {
+            case "basic":
+                if (authBasicSection) {
+                    authBasicSection.style.display = "block";
+                    if (authUsernameField) {
+                        authUsernameField.value = agent.authUsername || "";
+                    }
+                    if (authPasswordField) {
+                        authPasswordField.value = "*****"; // mask password
+                    }
+                }
+                break;
+            case "bearer":
+                if (authBearerSection) {
+                    authBearerSection.style.display = "block";
+                    if (authTokenField) {
+                        authTokenField.value = agent.authValue || ""; // show full token
+                    }
+                }
+                break;
+            case "authheaders":
+                if (authHeadersSection) {
+                    authHeadersSection.style.display = "block";
+                    if (authHeaderKeyField) {
+                        authHeaderKeyField.value = agent.authHeaderKey || "";
+                    }
+                    if (authHeaderValueField) {
+                        authHeaderValueField.value = "*****"; // mask header value
+                    }
+                }
+                break;
+            case "oauth":
+                if (authOAuthSection) {
+                    authOAuthSection.style.display = "block";
+                }
+                // Populate OAuth fields if available
+                if (agent.oauthConfig) {
+                    const config = agent.oauthConfig;
+                    if (oauthGrantTypeField && config.grant_type) {
+                        oauthGrantTypeField.value = config.grant_type;
+                        // Show/hide authorization code fields based on grant type
+                        if (oauthAuthCodeFields) {
+                            oauthAuthCodeFields.style.display =
+                                config.grant_type === "authorization_code"
+                                    ? "block"
+                                    : "none";
+                        }
+                    }
+                    if (oauthClientIdField && config.client_id) {
+                        oauthClientIdField.value = config.client_id;
+                    }
+                    if (oauthClientSecretField) {
+                        oauthClientSecretField.value = ""; // Don't populate secret for security
+                    }
+                    if (oauthTokenUrlField && config.token_url) {
+                        oauthTokenUrlField.value = config.token_url;
+                    }
+                    if (oauthAuthUrlField && config.authorization_url) {
+                        oauthAuthUrlField.value = config.authorization_url;
+                    }
+                    if (oauthRedirectUriField && config.redirect_uri) {
+                        oauthRedirectUriField.value = config.redirect_uri;
+                    }
+                    if (
+                        oauthScopesField &&
+                        config.scopes &&
+                        Array.isArray(config.scopes)
+                    ) {
+                        oauthScopesField.value = config.scopes.join(" ");
+                    }
+                }
+                break;
+            case "":
+            default:
+                // No auth – keep everything hidden
+                break;
+        }
+
+        // **Capabilities & Config (ensure valid dicts)**
+        safeSetValue(
+            "a2a-agent-capabilities-edit",
+            JSON.stringify(agent.capabilities || {}),
+        );
+        safeSetValue(
+            "a2a-agent-config-edit",
+            JSON.stringify(agent.config || {}),
+        );
+
+        // Set form action to the new POST endpoint
+
+        // Handle passthrough headers
+        const passthroughHeadersField = safeGetElement(
+            "edit-a2a-agent-passthrough-headers",
+        );
+        if (passthroughHeadersField) {
+            if (
+                agent.passthroughHeaders &&
+                Array.isArray(agent.passthroughHeaders)
+            ) {
+                passthroughHeadersField.value =
+                    agent.passthroughHeaders.join(", ");
+            } else {
+                passthroughHeadersField.value = "";
+            }
+        }
+
+        openModal("a2a-edit-modal");
+        console.log("✓ A2A Agent edit modal loaded successfully");
+    } catch (err) {
+        console.error("Error loading A2A agent:", err);
+        const errorMessage = handleFetchError(
+            err,
+            "load A2A Agent for editing",
+        );
+        showErrorMessage(errorMessage);
+    }
+}
+
+function safeSetValue(id, val) {
+    const el = document.getElementById(id);
+    if (el) {
+        el.value = val;
+    }
+}
+
+function toggleA2AAuthFields(authType) {
+    const sections = [
+        "auth-basic-fields-a2a-edit",
+        "auth-bearer-fields-a2a-edit",
+        "auth-headers-fields-a2a-edit",
+        "auth-oauth-fields-a2a-edit",
+    ];
+    sections.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.display = "none";
+        }
+    });
+    if (authType) {
+        const el = document.getElementById(`auth-${authType}-fields-a2a-edit`);
+        if (el) {
+            el.style.display = "block";
+        }
     }
 }
 
@@ -2288,6 +3186,10 @@ async function viewResource(resourceUri) {
                 { label: "Name", value: resource.name },
                 { label: "Type", value: resource.mimeType || "N/A" },
                 { label: "Description", value: resource.description || "N/A" },
+                {
+                    label: "Visibility",
+                    value: resource.visibility || "private",
+                },
             ];
 
             fields.forEach((field) => {
@@ -2427,36 +3329,69 @@ async function viewResource(resourceUri) {
             const metadataFields = [
                 {
                     label: "Created By",
-                    value: resource.createdBy || "Legacy Entity",
+                    value:
+                        resource.created_by ||
+                        resource.createdBy ||
+                        "Legacy Entity",
                 },
                 {
                     label: "Created At",
-                    value: resource.createdAt
-                        ? new Date(resource.createdAt).toLocaleString()
-                        : "Pre-metadata",
+                    value:
+                        resource.created_at || resource.createdAt
+                            ? new Date(
+                                  resource.created_at || resource.createdAt,
+                              ).toLocaleString()
+                            : "Pre-metadata",
                 },
                 {
-                    label: "Created From",
-                    value: resource.createdFromIp || "Unknown",
+                    label: "Created From IP",
+                    value:
+                        resource.created_from_ip ||
+                        resource.createdFromIp ||
+                        "Unknown",
                 },
                 {
                     label: "Created Via",
-                    value: resource.createdVia || "Unknown",
+                    value:
+                        resource.created_via ||
+                        resource.createdVia ||
+                        "Unknown",
                 },
                 {
                     label: "Last Modified By",
-                    value: resource.modifiedBy || "N/A",
+                    value: resource.modified_by || resource.modifiedBy || "N/A",
                 },
                 {
                     label: "Last Modified At",
-                    value: resource.modifiedAt
-                        ? new Date(resource.modifiedAt).toLocaleString()
-                        : "N/A",
+                    value:
+                        resource.updated_at || resource.updatedAt
+                            ? new Date(
+                                  resource.updated_at || resource.updatedAt,
+                              ).toLocaleString()
+                            : "N/A",
                 },
-                { label: "Version", value: resource.version || "1" },
+                {
+                    label: "Modified From IP",
+                    value:
+                        resource.modified_from_ip ||
+                        resource.modifiedFromIp ||
+                        "N/A",
+                },
+                {
+                    label: "Modified Via",
+                    value:
+                        resource.modified_via || resource.modifiedVia || "N/A",
+                },
+                {
+                    label: "Version",
+                    value: resource.version || "1",
+                },
                 {
                     label: "Import Batch",
-                    value: resource.importBatchId || "N/A",
+                    value:
+                        resource.import_batch_id ||
+                        resource.importBatchId ||
+                        "N/A",
                 },
             ];
 
@@ -2512,22 +3447,52 @@ async function editResource(resourceUri) {
         const data = await response.json();
         const resource = data.resource;
         const content = data.content;
+        // Ensure hidden inactive flag is preserved
         const isInactiveCheckedBool = isInactiveChecked("resources");
         let hiddenField = safeGetElement("edit-resource-show-inactive");
-        if (!hiddenField) {
+        const editForm = safeGetElement("edit-resource-form");
+
+        if (!hiddenField && editForm) {
             hiddenField = document.createElement("input");
             hiddenField.type = "hidden";
             hiddenField.name = "is_inactive_checked";
             hiddenField.id = "edit-resource-show-inactive";
             const editForm = safeGetElement("edit-resource-form");
-            if (editForm) {
-                editForm.appendChild(hiddenField);
-            }
+            editForm.appendChild(hiddenField);
         }
         hiddenField.value = isInactiveCheckedBool;
 
+        // ✅ Prefill visibility radios (consistent with server)
+        const visibility = resource.visibility
+            ? resource.visibility.toLowerCase()
+            : null;
+
+        const publicRadio = safeGetElement("edit-resource-visibility-public");
+        const teamRadio = safeGetElement("edit-resource-visibility-team");
+        const privateRadio = safeGetElement("edit-resource-visibility-private");
+
+        // Clear all first
+        if (publicRadio) {
+            publicRadio.checked = false;
+        }
+        if (teamRadio) {
+            teamRadio.checked = false;
+        }
+        if (privateRadio) {
+            privateRadio.checked = false;
+        }
+
+        if (visibility) {
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
+        }
+
         // Set form action and populate fields with validation
-        const editForm = safeGetElement("edit-resource-form");
         if (editForm) {
             editForm.action = `${window.ROOT_PATH}/admin/resources/${encodeURIComponent(resourceUri)}/edit`;
         }
@@ -2637,6 +3602,7 @@ async function viewPrompt(promptName) {
             const fields = [
                 { label: "Name", value: prompt.name },
                 { label: "Description", value: prompt.description || "N/A" },
+                { label: "Visibility", value: prompt.visibility || "private" },
             ];
 
             fields.forEach((field) => {
@@ -2782,28 +3748,54 @@ async function viewPrompt(promptName) {
             const metadataFields = [
                 {
                     label: "Created By",
-                    value: prompt.createdBy || "Legacy Entity",
+                    value:
+                        prompt.created_by ||
+                        prompt.createdBy ||
+                        "Legacy Entity",
                 },
                 {
                     label: "Created At",
-                    value: prompt.createdAt
-                        ? new Date(prompt.createdAt).toLocaleString()
-                        : "Pre-metadata",
+                    value:
+                        prompt.created_at || prompt.createdAt
+                            ? new Date(
+                                  prompt.created_at || prompt.createdAt,
+                              ).toLocaleString()
+                            : "Pre-metadata",
                 },
                 {
-                    label: "Created From",
-                    value: prompt.createdFromIp || "Unknown",
+                    label: "Created From IP",
+                    value:
+                        prompt.created_from_ip ||
+                        prompt.createdFromIp ||
+                        "Unknown",
                 },
-                { label: "Created Via", value: prompt.createdVia || "Unknown" },
+                {
+                    label: "Created Via",
+                    value: prompt.created_via || prompt.createdVia || "Unknown",
+                },
                 {
                     label: "Last Modified By",
-                    value: prompt.modifiedBy || "N/A",
+                    value: prompt.modified_by || prompt.modifiedBy || "N/A",
                 },
                 {
                     label: "Last Modified At",
-                    value: prompt.modifiedAt
-                        ? new Date(prompt.modifiedAt).toLocaleString()
-                        : "N/A",
+                    value:
+                        prompt.updated_at || prompt.updatedAt
+                            ? new Date(
+                                  prompt.updated_at || prompt.updatedAt,
+                              ).toLocaleString()
+                            : "N/A",
+                },
+                {
+                    label: "Modified From IP",
+                    value:
+                        prompt.modified_from_ip ||
+                        prompt.modifiedFromIp ||
+                        "N/A",
+                },
+                {
+                    label: "Modified Via",
+                    value: prompt.modified_via || prompt.modifiedVia || "N/A",
                 },
                 { label: "Version", value: prompt.version || "1" },
                 { label: "Import Batch", value: prompt.importBatchId || "N/A" },
@@ -2846,12 +3838,12 @@ async function viewPrompt(promptName) {
 /**
  * SECURE: Edit Prompt function with validation
  */
-async function editPrompt(promptName) {
+async function editPrompt(promptId) {
     try {
-        console.log(`Editing prompt: ${promptName}`);
+        console.log(`Editing prompt: ${promptId}`);
 
         const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptName)}`,
+            `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}`,
         );
 
         if (!response.ok) {
@@ -2874,10 +3866,55 @@ async function editPrompt(promptName) {
         }
         hiddenField.value = isInactiveCheckedBool;
 
+        // ✅ Prefill visibility radios (consistent with server)
+        const visibility = prompt.visibility
+            ? prompt.visibility.toLowerCase()
+            : null;
+
+        const publicRadio = safeGetElement("edit-prompt-visibility-public");
+        const teamRadio = safeGetElement("edit-prompt-visibility-team");
+        const privateRadio = safeGetElement("edit-prompt-visibility-private");
+
+        // Clear all first
+        if (publicRadio) {
+            publicRadio.checked = false;
+        }
+        if (teamRadio) {
+            teamRadio.checked = false;
+        }
+        if (privateRadio) {
+            privateRadio.checked = false;
+        }
+
+        if (visibility) {
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
+        }
+
         // Set form action and populate fields with validation
         const editForm = safeGetElement("edit-prompt-form");
         if (editForm) {
-            editForm.action = `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptName)}/edit`;
+            editForm.action = `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}/edit`;
+            // Add or update hidden team_id input if present in URL
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+            if (teamId) {
+                let teamInput = safeGetElement("edit-prompt-team-id");
+                if (!teamInput) {
+                    teamInput = document.createElement("input");
+                    teamInput.type = "hidden";
+                    teamInput.name = "team_id";
+                    teamInput.id = "edit-prompt-team-id";
+                    editForm.appendChild(teamInput);
+                }
+                teamInput.value = teamId;
+            }
         }
 
         // Validate prompt name
@@ -2973,6 +4010,7 @@ async function viewGateway(gatewayId) {
                 { label: "Name", value: gateway.name },
                 { label: "URL", value: gateway.url },
                 { label: "Description", value: gateway.description || "N/A" },
+                { label: "Visibility", value: gateway.visibility || "private" },
             ];
 
             // Add tags field with special handling
@@ -3055,31 +4093,55 @@ async function viewGateway(gatewayId) {
             const metadataFields = [
                 {
                     label: "Created By",
-                    value: gateway.createdBy || "Legacy Entity",
+                    value:
+                        gateway.created_by ||
+                        gateway.createdBy ||
+                        "Legacy Entity",
                 },
                 {
                     label: "Created At",
-                    value: gateway.createdAt
-                        ? new Date(gateway.createdAt).toLocaleString()
-                        : "Pre-metadata",
+                    value:
+                        gateway.created_at || gateway.createdAt
+                            ? new Date(
+                                  gateway.created_at || gateway.createdAt,
+                              ).toLocaleString()
+                            : "Pre-metadata",
                 },
                 {
-                    label: "Created From",
-                    value: gateway.createdFromIp || "Unknown",
+                    label: "Created From IP",
+                    value:
+                        gateway.created_from_ip ||
+                        gateway.createdFromIp ||
+                        "Unknown",
                 },
                 {
                     label: "Created Via",
-                    value: gateway.createdVia || "Unknown",
+                    value:
+                        gateway.created_via || gateway.createdVia || "Unknown",
                 },
                 {
                     label: "Last Modified By",
-                    value: gateway.modifiedBy || "N/A",
+                    value: gateway.modified_by || gateway.modifiedBy || "N/A",
                 },
                 {
                     label: "Last Modified At",
-                    value: gateway.modifiedAt
-                        ? new Date(gateway.modifiedAt).toLocaleString()
-                        : "N/A",
+                    value:
+                        gateway.updated_at || gateway.updatedAt
+                            ? new Date(
+                                  gateway.updated_at || gateway.updatedAt,
+                              ).toLocaleString()
+                            : "N/A",
+                },
+                {
+                    label: "Modified From IP",
+                    value:
+                        gateway.modified_from_ip ||
+                        gateway.modifiedFromIp ||
+                        "N/A",
+                },
+                {
+                    label: "Modified Via",
+                    value: gateway.modified_via || gateway.modifiedVia || "N/A",
                 },
                 { label: "Version", value: gateway.version || "1" },
                 {
@@ -3138,6 +4200,8 @@ async function editGateway(gatewayId) {
 
         const gateway = await response.json();
 
+        console.log("Gateway Details: " + JSON.stringify(gateway, null, 2));
+
         const isInactiveCheckedBool = isInactiveChecked("gateways");
         let hiddenField = safeGetElement("edit-gateway-show-inactive");
         if (!hiddenField) {
@@ -3181,6 +4245,34 @@ async function editGateway(gatewayId) {
         const tagsField = safeGetElement("edit-gateway-tags");
         if (tagsField) {
             tagsField.value = gateway.tags ? gateway.tags.join(", ") : "";
+        }
+
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        if (teamId) {
+            const hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "team_id";
+            hiddenInput.value = teamId;
+            editForm.appendChild(hiddenInput);
+        }
+
+        const visibility = gateway.visibility; // Ensure visibility is either 'public', 'team', or 'private'
+        const publicRadio = safeGetElement("edit-gateway-visibility-public");
+        const teamRadio = safeGetElement("edit-gateway-visibility-team");
+        const privateRadio = safeGetElement("edit-gateway-visibility-private");
+
+        if (visibility) {
+            // Check visibility and set the corresponding radio button
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
         }
 
         if (transportField) {
@@ -3260,7 +4352,15 @@ async function editGateway(gatewayId) {
                         authUsernameField.value = gateway.authUsername || "";
                     }
                     if (authPasswordField) {
-                        authPasswordField.value = "*****"; // mask password
+                        if (gateway.authPasswordUnmasked) {
+                            authPasswordField.dataset.isMasked = "true";
+                            authPasswordField.dataset.realValue =
+                                gateway.authPasswordUnmasked;
+                        } else {
+                            delete authPasswordField.dataset.isMasked;
+                            delete authPasswordField.dataset.realValue;
+                        }
+                        authPasswordField.value = MASKED_AUTH_VALUE;
                     }
                 }
                 break;
@@ -3268,18 +4368,52 @@ async function editGateway(gatewayId) {
                 if (authBearerSection) {
                     authBearerSection.style.display = "block";
                     if (authTokenField) {
-                        authTokenField.value = gateway.authValue || ""; // show full token
+                        if (gateway.authTokenUnmasked) {
+                            authTokenField.dataset.isMasked = "true";
+                            authTokenField.dataset.realValue =
+                                gateway.authTokenUnmasked;
+                            authTokenField.value = MASKED_AUTH_VALUE;
+                        } else {
+                            delete authTokenField.dataset.isMasked;
+                            delete authTokenField.dataset.realValue;
+                            authTokenField.value = gateway.authToken || "";
+                        }
                     }
                 }
                 break;
             case "authheaders":
                 if (authHeadersSection) {
                     authHeadersSection.style.display = "block";
+                    const unmaskedHeaders =
+                        Array.isArray(gateway.authHeadersUnmasked) &&
+                        gateway.authHeadersUnmasked.length > 0
+                            ? gateway.authHeadersUnmasked
+                            : gateway.authHeaders;
+                    if (
+                        Array.isArray(unmaskedHeaders) &&
+                        unmaskedHeaders.length > 0
+                    ) {
+                        loadAuthHeaders(
+                            "auth-headers-container-gw-edit",
+                            unmaskedHeaders,
+                            { maskValues: true },
+                        );
+                    } else {
+                        updateAuthHeadersJSON("auth-headers-container-gw-edit");
+                    }
                     if (authHeaderKeyField) {
                         authHeaderKeyField.value = gateway.authHeaderKey || "";
                     }
                     if (authHeaderValueField) {
-                        authHeaderValueField.value = "*****"; // mask header value
+                        if (
+                            Array.isArray(unmaskedHeaders) &&
+                            unmaskedHeaders.length === 1
+                        ) {
+                            authHeaderValueField.dataset.isMasked = "true";
+                            authHeaderValueField.dataset.realValue =
+                                unmaskedHeaders[0].value ?? "";
+                        }
+                        authHeaderValueField.value = MASKED_AUTH_VALUE;
                     }
                 }
                 break;
@@ -3379,27 +4513,88 @@ async function viewServer(serverId) {
         if (serverDetailsDiv) {
             const container = document.createElement("div");
             container.className =
-                "space-y-2 dark:bg-gray-900 dark:text-gray-100";
+                "space-y-4 dark:bg-gray-900 dark:text-gray-100";
+
+            // Header section with server name and icon
+            const headerDiv = document.createElement("div");
+            headerDiv.className =
+                "flex items-center space-x-3 pb-4 border-b border-gray-200 dark:border-gray-600";
+
+            if (server.icon) {
+                const iconImg = document.createElement("img");
+                iconImg.src = server.icon;
+                iconImg.alt = `${server.name} icon`;
+                iconImg.className = "w-12 h-12 rounded-lg object-cover";
+                iconImg.onerror = function () {
+                    this.style.display = "none";
+                };
+                headerDiv.appendChild(iconImg);
+            }
+
+            const headerTextDiv = document.createElement("div");
+            const serverTitle = document.createElement("h2");
+            serverTitle.className =
+                "text-xl font-bold text-gray-900 dark:text-gray-100";
+            serverTitle.textContent = server.name;
+            headerTextDiv.appendChild(serverTitle);
+
+            if (server.description) {
+                const serverDesc = document.createElement("p");
+                serverDesc.className =
+                    "text-sm text-gray-600 dark:text-gray-400 mt-1";
+                serverDesc.textContent = server.description;
+                headerTextDiv.appendChild(serverDesc);
+            }
+
+            headerDiv.appendChild(headerTextDiv);
+            container.appendChild(headerDiv);
+
+            // Basic information section
+            const basicInfoDiv = document.createElement("div");
+            basicInfoDiv.className = "space-y-2";
+
+            const basicInfoTitle = document.createElement("strong");
+            basicInfoTitle.textContent = "Basic Information:";
+            basicInfoTitle.className =
+                "block text-gray-900 dark:text-gray-100 mb-3";
+            basicInfoDiv.appendChild(basicInfoTitle);
 
             const fields = [
-                { label: "Name", value: server.name },
-                { label: "URL", value: server.url },
-                { label: "Description", value: server.description || "N/A" },
+                { label: "Server ID", value: server.id },
+                { label: "URL", value: getCatalogUrl(server) || "N/A" },
+                { label: "Type", value: "Virtual Server" },
+                { label: "Visibility", value: server.visibility || "private" },
             ];
 
             fields.forEach((field) => {
                 const p = document.createElement("p");
+                p.className = "text-sm";
                 const strong = document.createElement("strong");
                 strong.textContent = field.label + ": ";
+                strong.className =
+                    "font-medium text-gray-700 dark:text-gray-300";
                 p.appendChild(strong);
-                p.appendChild(document.createTextNode(field.value));
-                container.appendChild(p);
+                const valueSpan = document.createElement("span");
+                valueSpan.textContent = field.value;
+                valueSpan.className = "text-gray-600 dark:text-gray-400";
+                p.appendChild(valueSpan);
+                basicInfoDiv.appendChild(p);
             });
+
+            container.appendChild(basicInfoDiv);
+
+            // Tags and Status section
+            const tagsStatusDiv = document.createElement("div");
+            tagsStatusDiv.className =
+                "flex items-center justify-between space-y-2";
 
             // Tags section
             const tagsP = document.createElement("p");
+            tagsP.className = "text-sm";
             const tagsStrong = document.createElement("strong");
             tagsStrong.textContent = "Tags: ";
+            tagsStrong.className =
+                "font-medium text-gray-700 dark:text-gray-300";
             tagsP.appendChild(tagsStrong);
 
             if (server.tags && server.tags.length > 0) {
@@ -3411,25 +4606,294 @@ async function viewServer(serverId) {
                     tagsP.appendChild(tagSpan);
                 });
             } else {
-                tagsP.appendChild(document.createTextNode("None"));
+                const noneSpan = document.createElement("span");
+                noneSpan.textContent = "None";
+                noneSpan.className = "text-gray-500 dark:text-gray-400";
+                tagsP.appendChild(noneSpan);
             }
-            container.appendChild(tagsP);
 
-            // Status
+            // Status section
             const statusP = document.createElement("p");
+            statusP.className = "text-sm";
             const statusStrong = document.createElement("strong");
             statusStrong.textContent = "Status: ";
+            statusStrong.className =
+                "font-medium text-gray-700 dark:text-gray-300";
             statusP.appendChild(statusStrong);
 
             const statusSpan = document.createElement("span");
             statusSpan.className = `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                 server.isActive
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
+                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                    : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
             }`;
             statusSpan.textContent = server.isActive ? "Active" : "Inactive";
             statusP.appendChild(statusSpan);
-            container.appendChild(statusP);
+
+            tagsStatusDiv.appendChild(tagsP);
+            tagsStatusDiv.appendChild(statusP);
+            container.appendChild(tagsStatusDiv);
+
+            // Associated Tools, Resources, and Prompts section
+            const associatedDiv = document.createElement("div");
+            associatedDiv.className = "mt-6 border-t pt-4";
+
+            const associatedTitle = document.createElement("strong");
+            associatedTitle.textContent = "Associated Items:";
+            associatedDiv.appendChild(associatedTitle);
+
+            // Tools section
+            if (server.associatedTools && server.associatedTools.length > 0) {
+                const toolsSection = document.createElement("div");
+                toolsSection.className = "mt-3";
+
+                const toolsLabel = document.createElement("p");
+                const toolsStrong = document.createElement("strong");
+                toolsStrong.textContent = "Tools: ";
+                toolsLabel.appendChild(toolsStrong);
+
+                const toolsList = document.createElement("div");
+                toolsList.className = "mt-1 space-y-1";
+
+                const maxToShow = 3;
+                const toolsToShow = server.associatedTools.slice(0, maxToShow);
+
+                toolsToShow.forEach((toolId) => {
+                    const toolItem = document.createElement("div");
+                    toolItem.className = "flex items-center space-x-2";
+
+                    const toolBadge = document.createElement("span");
+                    toolBadge.className =
+                        "inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full dark:bg-green-900 dark:text-green-200";
+                    toolBadge.textContent =
+                        window.toolMapping && window.toolMapping[toolId]
+                            ? window.toolMapping[toolId]
+                            : toolId;
+
+                    const toolIdSpan = document.createElement("span");
+                    toolIdSpan.className =
+                        "text-xs text-gray-500 dark:text-gray-400";
+                    toolIdSpan.textContent = `(${toolId})`;
+
+                    toolItem.appendChild(toolBadge);
+                    toolItem.appendChild(toolIdSpan);
+                    toolsList.appendChild(toolItem);
+                });
+
+                // If more than maxToShow, add a summary badge
+                if (server.associatedTools.length > maxToShow) {
+                    const moreItem = document.createElement("div");
+                    moreItem.className = "flex items-center space-x-2";
+
+                    const moreBadge = document.createElement("span");
+                    moreBadge.className =
+                        "inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full cursor-pointer dark:bg-green-900 dark:text-green-200";
+                    moreBadge.title = "Total tools associated";
+                    const remaining = server.associatedTools.length - maxToShow;
+                    moreBadge.textContent = `+${remaining} more`;
+
+                    moreItem.appendChild(moreBadge);
+                    toolsList.appendChild(moreItem);
+                }
+
+                toolsLabel.appendChild(toolsList);
+                toolsSection.appendChild(toolsLabel);
+                associatedDiv.appendChild(toolsSection);
+            }
+
+            // Resources section
+            if (
+                server.associatedResources &&
+                server.associatedResources.length > 0
+            ) {
+                const resourcesSection = document.createElement("div");
+                resourcesSection.className = "mt-3";
+
+                const resourcesLabel = document.createElement("p");
+                const resourcesStrong = document.createElement("strong");
+                resourcesStrong.textContent = "Resources: ";
+                resourcesLabel.appendChild(resourcesStrong);
+
+                const resourcesList = document.createElement("div");
+                resourcesList.className = "mt-1 space-y-1";
+
+                const maxToShow = 3;
+                const resourcesToShow = server.associatedResources.slice(
+                    0,
+                    maxToShow,
+                );
+
+                resourcesToShow.forEach((resourceId) => {
+                    const resourceItem = document.createElement("div");
+                    resourceItem.className = "flex items-center space-x-2";
+
+                    const resourceBadge = document.createElement("span");
+                    resourceBadge.className =
+                        "inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full dark:bg-blue-900 dark:text-blue-200";
+                    resourceBadge.textContent =
+                        window.resourceMapping &&
+                        window.resourceMapping[resourceId]
+                            ? window.resourceMapping[resourceId]
+                            : `Resource ${resourceId}`;
+
+                    const resourceIdSpan = document.createElement("span");
+                    resourceIdSpan.className =
+                        "text-xs text-gray-500 dark:text-gray-400";
+                    resourceIdSpan.textContent = `(${resourceId})`;
+
+                    resourceItem.appendChild(resourceBadge);
+                    resourceItem.appendChild(resourceIdSpan);
+                    resourcesList.appendChild(resourceItem);
+                });
+
+                // If more than maxToShow, add a summary badge
+                if (server.associatedResources.length > maxToShow) {
+                    const moreItem = document.createElement("div");
+                    moreItem.className = "flex items-center space-x-2";
+
+                    const moreBadge = document.createElement("span");
+                    moreBadge.className =
+                        "inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full cursor-pointer dark:bg-blue-900 dark:text-blue-200";
+                    moreBadge.title = "Total resources associated";
+                    const remaining =
+                        server.associatedResources.length - maxToShow;
+                    moreBadge.textContent = `+${remaining} more`;
+
+                    moreItem.appendChild(moreBadge);
+                    resourcesList.appendChild(moreItem);
+                }
+
+                resourcesLabel.appendChild(resourcesList);
+                resourcesSection.appendChild(resourcesLabel);
+                associatedDiv.appendChild(resourcesSection);
+            }
+
+            // Prompts section
+            if (
+                server.associatedPrompts &&
+                server.associatedPrompts.length > 0
+            ) {
+                const promptsSection = document.createElement("div");
+                promptsSection.className = "mt-3";
+
+                const promptsLabel = document.createElement("p");
+                const promptsStrong = document.createElement("strong");
+                promptsStrong.textContent = "Prompts: ";
+                promptsLabel.appendChild(promptsStrong);
+
+                const promptsList = document.createElement("div");
+                promptsList.className = "mt-1 space-y-1";
+
+                const maxToShow = 3;
+                const promptsToShow = server.associatedPrompts.slice(
+                    0,
+                    maxToShow,
+                );
+
+                promptsToShow.forEach((promptId) => {
+                    const promptItem = document.createElement("div");
+                    promptItem.className = "flex items-center space-x-2";
+
+                    const promptBadge = document.createElement("span");
+                    promptBadge.className =
+                        "inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full dark:bg-purple-900 dark:text-purple-200";
+                    promptBadge.textContent =
+                        window.promptMapping && window.promptMapping[promptId]
+                            ? window.promptMapping[promptId]
+                            : `Prompt ${promptId}`;
+
+                    const promptIdSpan = document.createElement("span");
+                    promptIdSpan.className =
+                        "text-xs text-gray-500 dark:text-gray-400";
+                    promptIdSpan.textContent = `(${promptId})`;
+
+                    promptItem.appendChild(promptBadge);
+                    promptItem.appendChild(promptIdSpan);
+                    promptsList.appendChild(promptItem);
+                });
+
+                // If more than maxToShow, add a summary badge
+                if (server.associatedPrompts.length > maxToShow) {
+                    const moreItem = document.createElement("div");
+                    moreItem.className = "flex items-center space-x-2";
+
+                    const moreBadge = document.createElement("span");
+                    moreBadge.className =
+                        "inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full cursor-pointer dark:bg-purple-900 dark:text-purple-200";
+                    moreBadge.title = "Total prompts associated";
+                    const remaining =
+                        server.associatedPrompts.length - maxToShow;
+                    moreBadge.textContent = `+${remaining} more`;
+
+                    moreItem.appendChild(moreBadge);
+                    promptsList.appendChild(moreItem);
+                }
+
+                promptsLabel.appendChild(promptsList);
+                promptsSection.appendChild(promptsLabel);
+                associatedDiv.appendChild(promptsSection);
+            }
+
+            // A2A Agents section
+            if (
+                server.associatedA2aAgents &&
+                server.associatedA2aAgents.length > 0
+            ) {
+                const agentsSection = document.createElement("div");
+                agentsSection.className = "mt-3";
+
+                const agentsLabel = document.createElement("p");
+                const agentsStrong = document.createElement("strong");
+                agentsStrong.textContent = "A2A Agents: ";
+                agentsLabel.appendChild(agentsStrong);
+
+                const agentsList = document.createElement("div");
+                agentsList.className = "mt-1 space-y-1";
+
+                server.associatedA2aAgents.forEach((agentId) => {
+                    const agentItem = document.createElement("div");
+                    agentItem.className = "flex items-center space-x-2";
+
+                    const agentBadge = document.createElement("span");
+                    agentBadge.className =
+                        "inline-block bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full dark:bg-orange-900 dark:text-orange-200";
+                    agentBadge.textContent = `Agent ${agentId}`;
+
+                    const agentIdSpan = document.createElement("span");
+                    agentIdSpan.className =
+                        "text-xs text-gray-500 dark:text-gray-400";
+                    agentIdSpan.textContent = `(${agentId})`;
+
+                    agentItem.appendChild(agentBadge);
+                    agentItem.appendChild(agentIdSpan);
+                    agentsList.appendChild(agentItem);
+                });
+
+                agentsLabel.appendChild(agentsList);
+                agentsSection.appendChild(agentsLabel);
+                associatedDiv.appendChild(agentsSection);
+            }
+
+            // Show message if no associated items
+            if (
+                (!server.associatedTools ||
+                    server.associatedTools.length === 0) &&
+                (!server.associatedResources ||
+                    server.associatedResources.length === 0) &&
+                (!server.associatedPrompts ||
+                    server.associatedPrompts.length === 0) &&
+                (!server.associatedA2aAgents ||
+                    server.associatedA2aAgents.length === 0)
+            ) {
+                const noItemsP = document.createElement("p");
+                noItemsP.className =
+                    "mt-2 text-sm text-gray-500 dark:text-gray-400";
+                noItemsP.textContent =
+                    "No tools, resources, prompts, or A2A agents are currently associated with this server.";
+                associatedDiv.appendChild(noItemsP);
+            }
+
+            container.appendChild(associatedDiv);
 
             // Add metadata section
             const metadataDiv = document.createElement("div");
@@ -3454,22 +4918,44 @@ async function viewServer(serverId) {
                         : "Pre-metadata",
                 },
                 {
-                    label: "Created From",
-                    value: server.createdFromIp || "Unknown",
+                    label: "Created From IP",
+                    value:
+                        server.created_from_ip ||
+                        server.createdFromIp ||
+                        "Unknown",
                 },
-                { label: "Created Via", value: server.createdVia || "Unknown" },
+                {
+                    label: "Created Via",
+                    value: server.created_via || server.createdVia || "Unknown",
+                },
                 {
                     label: "Last Modified By",
-                    value: server.modifiedBy || "N/A",
+                    value: server.modified_by || server.modifiedBy || "N/A",
                 },
                 {
                     label: "Last Modified At",
-                    value: server.modifiedAt
-                        ? new Date(server.modifiedAt).toLocaleString()
-                        : "N/A",
+                    value: server.updated_at
+                        ? new Date(server.updated_at).toLocaleString()
+                        : server.updatedAt
+                          ? new Date(server.updatedAt).toLocaleString()
+                          : "N/A",
+                },
+                {
+                    label: "Modified From IP",
+                    value:
+                        server.modified_from_ip ||
+                        server.modifiedFromIp ||
+                        "N/A",
+                },
+                {
+                    label: "Modified Via",
+                    value: server.modified_via || server.modifiedVia || "N/A",
                 },
                 { label: "Version", value: server.version || "1" },
-                { label: "Import Batch", value: server.importBatchId || "N/A" },
+                {
+                    label: "Import Batch",
+                    value: server.importBatchId || "N/A",
+                },
             ];
 
             metadataFields.forEach((field) => {
@@ -3524,20 +5010,49 @@ async function editServer(serverId) {
 
         const isInactiveCheckedBool = isInactiveChecked("servers");
         let hiddenField = safeGetElement("edit-server-show-inactive");
+        const editForm = safeGetElement("edit-server-form");
         if (!hiddenField) {
             hiddenField = document.createElement("input");
             hiddenField.type = "hidden";
             hiddenField.name = "is_inactive_checked";
             hiddenField.id = "edit-server-show-inactive";
-            const editForm = safeGetElement("edit-server-form");
+
             if (editForm) {
                 editForm.appendChild(hiddenField);
             }
         }
         hiddenField.value = isInactiveCheckedBool;
 
+        const visibility = server.visibility; // Ensure visibility is either 'public', 'team', or 'private'
+        const publicRadio = safeGetElement("edit-visibility-public");
+        const teamRadio = safeGetElement("edit-visibility-team");
+        const privateRadio = safeGetElement("edit-visibility-private");
+
+        // Prepopulate visibility radio buttons based on the server data
+        if (visibility) {
+            // Check visibility and set the corresponding radio button
+            if (visibility === "public" && publicRadio) {
+                publicRadio.checked = true;
+            } else if (visibility === "team" && teamRadio) {
+                teamRadio.checked = true;
+            } else if (visibility === "private" && privateRadio) {
+                privateRadio.checked = true;
+            }
+        }
+
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        if (teamId) {
+            const hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "team_id";
+            hiddenInput.value = teamId;
+            editForm.appendChild(hiddenInput);
+        }
+
         // Set form action and populate fields with validation
-        const editForm = safeGetElement("edit-server-form");
         if (editForm) {
             editForm.action = `${window.ROOT_PATH}/admin/servers/${serverId}/edit`;
         }
@@ -3570,13 +5085,619 @@ async function editServer(serverId) {
             tagsField.value = server.tags ? server.tags.join(", ") : "";
         }
 
+        // Set icon field
+        const iconField = safeGetElement("edit-server-icon");
+        if (iconField) {
+            iconField.value = server.icon || "";
+        }
+
+        // Store server data for modal population
+        window.currentEditingServer = server;
+
+        // Set associated tools data attribute on the container for reference by initToolSelect
+        const editToolsContainer = document.getElementById("edit-server-tools");
+        if (editToolsContainer && server.associatedTools) {
+            editToolsContainer.setAttribute(
+                "data-server-tools",
+                JSON.stringify(server.associatedTools),
+            );
+        }
+
+        // Set associated resources data attribute on the container
+        const editResourcesContainer = document.getElementById(
+            "edit-server-resources",
+        );
+        if (editResourcesContainer && server.associatedResources) {
+            editResourcesContainer.setAttribute(
+                "data-server-resources",
+                JSON.stringify(server.associatedResources),
+            );
+        }
+
+        // Set associated prompts data attribute on the container
+        const editPromptsContainer = document.getElementById(
+            "edit-server-prompts",
+        );
+        if (editPromptsContainer && server.associatedPrompts) {
+            editPromptsContainer.setAttribute(
+                "data-server-prompts",
+                JSON.stringify(server.associatedPrompts),
+            );
+        }
+
         openModal("server-edit-modal");
+
+        // Initialize the select handlers for resources and prompts in the edit modal
+        initResourceSelect(
+            "edit-server-resources",
+            "selectedEditResourcesPills",
+            "selectedEditResourcesWarning",
+            6,
+            "selectAllEditResourcesBtn",
+            "clearAllEditResourcesBtn",
+        );
+
+        initPromptSelect(
+            "edit-server-prompts",
+            "selectedEditPromptsPills",
+            "selectedEditPromptsWarning",
+            6,
+            "selectAllEditPromptsBtn",
+            "clearAllEditPromptsBtn",
+        );
+
+        // Use multiple approaches to ensure checkboxes get set
+        setEditServerAssociations(server);
+        setTimeout(() => setEditServerAssociations(server), 100);
+        setTimeout(() => setEditServerAssociations(server), 300);
+
+        // Set associated items after modal is opened
+        setTimeout(() => {
+            // Set associated tools checkboxes
+            const toolCheckboxes = document.querySelectorAll(
+                'input[name="associatedTools"]',
+            );
+
+            toolCheckboxes.forEach((checkbox) => {
+                let isChecked = false;
+                if (server.associatedTools && window.toolMapping) {
+                    // Get the tool name for this checkbox UUID
+                    const toolName = window.toolMapping[checkbox.value];
+
+                    // Check if this tool name is in the associated tools array
+                    isChecked =
+                        toolName && server.associatedTools.includes(toolName);
+                }
+
+                checkbox.checked = isChecked;
+            });
+
+            // Set associated resources checkboxes
+            const resourceCheckboxes = document.querySelectorAll(
+                'input[name="associatedResources"]',
+            );
+
+            resourceCheckboxes.forEach((checkbox) => {
+                const checkboxValue = parseInt(checkbox.value);
+                const isChecked =
+                    server.associatedResources &&
+                    server.associatedResources.includes(checkboxValue);
+                checkbox.checked = isChecked;
+            });
+
+            // Set associated prompts checkboxes
+            const promptCheckboxes = document.querySelectorAll(
+                'input[name="associatedPrompts"]',
+            );
+
+            promptCheckboxes.forEach((checkbox) => {
+                const checkboxValue = parseInt(checkbox.value);
+                const isChecked =
+                    server.associatedPrompts &&
+                    server.associatedPrompts.includes(checkboxValue);
+                checkbox.checked = isChecked;
+            });
+
+            // Manually trigger the selector update functions to refresh pills
+            setTimeout(() => {
+                // Find and trigger existing tool selector update
+                const toolContainer =
+                    document.getElementById("edit-server-tools");
+                if (toolContainer) {
+                    const firstToolCheckbox = toolContainer.querySelector(
+                        'input[type="checkbox"]',
+                    );
+                    if (firstToolCheckbox) {
+                        const changeEvent = new Event("change", {
+                            bubbles: true,
+                        });
+                        firstToolCheckbox.dispatchEvent(changeEvent);
+                    }
+                }
+
+                // Trigger resource selector update
+                const resourceContainer = document.getElementById(
+                    "edit-server-resources",
+                );
+                if (resourceContainer) {
+                    const firstResourceCheckbox =
+                        resourceContainer.querySelector(
+                            'input[type="checkbox"]',
+                        );
+                    if (firstResourceCheckbox) {
+                        const changeEvent = new Event("change", {
+                            bubbles: true,
+                        });
+                        firstResourceCheckbox.dispatchEvent(changeEvent);
+                    }
+                }
+
+                // Trigger prompt selector update
+                const promptContainer = document.getElementById(
+                    "edit-server-prompts",
+                );
+                if (promptContainer) {
+                    const firstPromptCheckbox = promptContainer.querySelector(
+                        'input[type="checkbox"]',
+                    );
+                    if (firstPromptCheckbox) {
+                        const changeEvent = new Event("change", {
+                            bubbles: true,
+                        });
+                        firstPromptCheckbox.dispatchEvent(changeEvent);
+                    }
+                }
+            }, 50);
+        }, 200);
+
         console.log("✓ Server edit modal loaded successfully");
     } catch (error) {
         console.error("Error fetching server for editing:", error);
         const errorMessage = handleFetchError(error, "load server for editing");
         showErrorMessage(errorMessage);
     }
+}
+
+// Helper function to set edit server associations
+function setEditServerAssociations(server) {
+    // Set associated tools checkboxes
+    const toolCheckboxes = document.querySelectorAll(
+        'input[name="associatedTools"]',
+    );
+
+    if (toolCheckboxes.length === 0) {
+        return;
+    }
+
+    toolCheckboxes.forEach((checkbox) => {
+        let isChecked = false;
+        if (server.associatedTools && window.toolMapping) {
+            // Get the tool name for this checkbox UUID
+            const toolName = window.toolMapping[checkbox.value];
+
+            // Check if this tool name is in the associated tools array
+            isChecked = toolName && server.associatedTools.includes(toolName);
+        }
+
+        checkbox.checked = isChecked;
+    });
+
+    // Set associated resources checkboxes
+    const resourceCheckboxes = document.querySelectorAll(
+        'input[name="associatedResources"]',
+    );
+
+    resourceCheckboxes.forEach((checkbox) => {
+        const checkboxValue = parseInt(checkbox.value);
+        const isChecked =
+            server.associatedResources &&
+            server.associatedResources.includes(checkboxValue);
+        checkbox.checked = isChecked;
+    });
+
+    // Set associated prompts checkboxes
+    const promptCheckboxes = document.querySelectorAll(
+        'input[name="associatedPrompts"]',
+    );
+
+    promptCheckboxes.forEach((checkbox) => {
+        const checkboxValue = parseInt(checkbox.value);
+        const isChecked =
+            server.associatedPrompts &&
+            server.associatedPrompts.includes(checkboxValue);
+        checkbox.checked = isChecked;
+    });
+
+    // Force update the pill displays by triggering change events
+    setTimeout(() => {
+        const allCheckboxes = [
+            ...document.querySelectorAll(
+                '#edit-server-tools input[type="checkbox"]',
+            ),
+            ...document.querySelectorAll(
+                '#edit-server-resources input[type="checkbox"]',
+            ),
+            ...document.querySelectorAll(
+                '#edit-server-prompts input[type="checkbox"]',
+            ),
+        ];
+
+        allCheckboxes.forEach((checkbox) => {
+            if (checkbox.checked) {
+                checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        });
+    }, 50);
+}
+
+// ===================================================================
+// HTMX HANDLERS for dynamic content loading
+// ===================================================================
+
+// Set up HTMX handler for auto-checking newly loaded tools when Select All is active or Edit Server mode
+if (window.htmx && !window._toolsHtmxHandlerAttached) {
+    window._toolsHtmxHandlerAttached = true;
+
+    window.htmx.on("htmx:afterSettle", function (evt) {
+        // Only handle tool pagination requests
+        if (
+            evt.detail.pathInfo &&
+            evt.detail.pathInfo.requestPath &&
+            evt.detail.pathInfo.requestPath.includes("/admin/tools/partial")
+        ) {
+            // Use a slight delay to ensure DOM is fully updated
+            setTimeout(() => {
+                // Find which container actually triggered the request by checking the target
+                let container = null;
+                const target = evt.detail.target;
+
+                // Check if the target itself is the edit server tools container (most common case for infinite scroll)
+                if (target && target.id === "edit-server-tools") {
+                    container = target;
+                }
+                // Or if target is the associated tools container (for add server)
+                else if (target && target.id === "associatedTools") {
+                    container = target;
+                }
+                // Otherwise try to find the container using closest
+                else if (target) {
+                    container =
+                        target.closest("#associatedTools") ||
+                        target.closest("#edit-server-tools");
+                }
+
+                // Fallback logic if container still not found
+                if (!container) {
+                    // Check which modal/dialog is currently open to determine the correct container
+                    const editModal =
+                        document.getElementById("server-edit-modal");
+                    const isEditModalOpen =
+                        editModal && !editModal.classList.contains("hidden");
+
+                    if (isEditModalOpen) {
+                        container =
+                            document.getElementById("edit-server-tools");
+                    } else {
+                        container = document.getElementById("associatedTools");
+                    }
+                }
+
+                // Final safety check - use direct lookup if still not found
+                if (!container) {
+                    const addServerContainer =
+                        document.getElementById("associatedTools");
+                    const editServerContainer =
+                        document.getElementById("edit-server-tools");
+
+                    // Check if edit server container has the server tools data attribute set
+                    if (
+                        editServerContainer &&
+                        editServerContainer.getAttribute("data-server-tools")
+                    ) {
+                        container = editServerContainer;
+                    } else if (
+                        addServerContainer &&
+                        addServerContainer.offsetParent !== null
+                    ) {
+                        container = addServerContainer;
+                    } else if (
+                        editServerContainer &&
+                        editServerContainer.offsetParent !== null
+                    ) {
+                        container = editServerContainer;
+                    } else {
+                        // Last resort: just pick one that exists
+                        container = addServerContainer || editServerContainer;
+                    }
+                }
+
+                if (container) {
+                    // Update tool mapping for newly loaded tools
+                    const newCheckboxes = container.querySelectorAll(
+                        "input[data-auto-check=true]",
+                    );
+
+                    if (!window.toolMapping) {
+                        window.toolMapping = {};
+                    }
+
+                    newCheckboxes.forEach((cb) => {
+                        const toolId = cb.value;
+                        const toolName = cb.getAttribute("data-tool-name");
+                        if (toolId && toolName) {
+                            window.toolMapping[toolId] = toolName;
+                        }
+                    });
+
+                    const selectAllInput = container.querySelector(
+                        'input[name="selectAllTools"]',
+                    );
+
+                    // Check if Select All is active
+                    if (selectAllInput && selectAllInput.value === "true") {
+                        newCheckboxes.forEach((cb) => {
+                            cb.checked = true;
+                            cb.removeAttribute("data-auto-check");
+                        });
+
+                        if (newCheckboxes.length > 0) {
+                            const event = new Event("change", {
+                                bubbles: true,
+                            });
+                            container.dispatchEvent(event);
+                        }
+                    }
+                    // Check if we're in Edit Server mode and need to pre-select tools
+                    else if (container.id === "edit-server-tools") {
+                        // Try to get server tools from data attribute (primary source)
+                        let serverTools = null;
+                        const dataAttr =
+                            container.getAttribute("data-server-tools");
+
+                        if (dataAttr) {
+                            try {
+                                serverTools = JSON.parse(dataAttr);
+                            } catch (e) {
+                                console.error(
+                                    "Failed to parse data-server-tools:",
+                                    e,
+                                );
+                            }
+                        }
+
+                        if (serverTools && serverTools.length > 0) {
+                            newCheckboxes.forEach((cb) => {
+                                const toolId = cb.value;
+                                const toolName =
+                                    cb.getAttribute("data-tool-name"); // Use the data attribute directly
+                                if (toolId && toolName) {
+                                    // Check if this tool name exists in server associated tools
+                                    if (serverTools.includes(toolName)) {
+                                        cb.checked = true;
+                                    }
+                                }
+                                cb.removeAttribute("data-auto-check");
+                            });
+
+                            // Trigger an update to display the correct count based on server.associatedTools
+                            // This will make sure the pill counters reflect the total associated tools count
+                            const event = new Event("change", {
+                                bubbles: true,
+                            });
+                            container.dispatchEvent(event);
+                        }
+                    }
+                }
+            }, 10); // Small delay to ensure DOM is updated
+        }
+    });
+}
+
+// Set up HTMX handler for auto-checking newly loaded resources when Select All is active
+if (window.htmx && !window._resourcesHtmxHandlerAttached) {
+    window._resourcesHtmxHandlerAttached = true;
+
+    window.htmx.on("htmx:afterSettle", function (evt) {
+        // Only handle resource pagination requests
+        if (
+            evt.detail.pathInfo &&
+            evt.detail.pathInfo.requestPath &&
+            evt.detail.pathInfo.requestPath.includes("/admin/resources/partial")
+        ) {
+            setTimeout(() => {
+                // Find the container
+                let container = null;
+                const target = evt.detail.target;
+
+                if (target && target.id === "edit-server-resources") {
+                    container = target;
+                } else if (target && target.id === "associatedResources") {
+                    container = target;
+                } else if (target) {
+                    container =
+                        target.closest("#associatedResources") ||
+                        target.closest("#edit-server-resources");
+                }
+
+                if (!container) {
+                    const editModal =
+                        document.getElementById("server-edit-modal");
+                    const isEditModalOpen =
+                        editModal && !editModal.classList.contains("hidden");
+
+                    if (isEditModalOpen) {
+                        container = document.getElementById(
+                            "edit-server-resources",
+                        );
+                    } else {
+                        container = document.getElementById(
+                            "associatedResources",
+                        );
+                    }
+                }
+
+                if (container) {
+                    const newCheckboxes = container.querySelectorAll(
+                        "input[data-auto-check=true]",
+                    );
+
+                    const selectAllInput = container.querySelector(
+                        'input[name="selectAllResources"]',
+                    );
+
+                    // Check if Select All is active
+                    if (selectAllInput && selectAllInput.value === "true") {
+                        newCheckboxes.forEach((cb) => {
+                            cb.checked = true;
+                            cb.removeAttribute("data-auto-check");
+                        });
+
+                        if (newCheckboxes.length > 0) {
+                            const event = new Event("change", {
+                                bubbles: true,
+                            });
+                            container.dispatchEvent(event);
+                        }
+                    }
+
+                    // Also check for edit mode: pre-select items based on server's associated resources
+                    const dataAttr = container.getAttribute(
+                        "data-server-resources",
+                    );
+                    if (dataAttr) {
+                        try {
+                            const associatedResourceIds = JSON.parse(dataAttr);
+                            newCheckboxes.forEach((cb) => {
+                                const checkboxValue = parseInt(cb.value);
+                                if (
+                                    associatedResourceIds.includes(
+                                        checkboxValue,
+                                    )
+                                ) {
+                                    cb.checked = true;
+                                }
+                                cb.removeAttribute("data-auto-check");
+                            });
+
+                            if (newCheckboxes.length > 0) {
+                                const event = new Event("change", {
+                                    bubbles: true,
+                                });
+                                container.dispatchEvent(event);
+                            }
+                        } catch (e) {
+                            console.error(
+                                "Error parsing data-server-resources:",
+                                e,
+                            );
+                        }
+                    }
+                }
+            }, 10);
+        }
+    });
+}
+
+// Set up HTMX handler for auto-checking newly loaded prompts when Select All is active
+if (window.htmx && !window._promptsHtmxHandlerAttached) {
+    window._promptsHtmxHandlerAttached = true;
+
+    window.htmx.on("htmx:afterSettle", function (evt) {
+        // Only handle prompt pagination requests
+        if (
+            evt.detail.pathInfo &&
+            evt.detail.pathInfo.requestPath &&
+            evt.detail.pathInfo.requestPath.includes("/admin/prompts/partial")
+        ) {
+            setTimeout(() => {
+                // Find the container
+                let container = null;
+                const target = evt.detail.target;
+
+                if (target && target.id === "edit-server-prompts") {
+                    container = target;
+                } else if (target && target.id === "associatedPrompts") {
+                    container = target;
+                } else if (target) {
+                    container =
+                        target.closest("#associatedPrompts") ||
+                        target.closest("#edit-server-prompts");
+                }
+
+                if (!container) {
+                    const editModal =
+                        document.getElementById("server-edit-modal");
+                    const isEditModalOpen =
+                        editModal && !editModal.classList.contains("hidden");
+
+                    if (isEditModalOpen) {
+                        container = document.getElementById(
+                            "edit-server-prompts",
+                        );
+                    } else {
+                        container =
+                            document.getElementById("associatedPrompts");
+                    }
+                }
+
+                if (container) {
+                    const newCheckboxes = container.querySelectorAll(
+                        "input[data-auto-check=true]",
+                    );
+
+                    const selectAllInput = container.querySelector(
+                        'input[name="selectAllPrompts"]',
+                    );
+
+                    // Check if Select All is active
+                    if (selectAllInput && selectAllInput.value === "true") {
+                        newCheckboxes.forEach((cb) => {
+                            cb.checked = true;
+                            cb.removeAttribute("data-auto-check");
+                        });
+
+                        if (newCheckboxes.length > 0) {
+                            const event = new Event("change", {
+                                bubbles: true,
+                            });
+                            container.dispatchEvent(event);
+                        }
+                    }
+
+                    // Also check for edit mode: pre-select items based on server's associated prompts
+                    const dataAttr = container.getAttribute(
+                        "data-server-prompts",
+                    );
+                    if (dataAttr) {
+                        try {
+                            const associatedPromptIds = JSON.parse(dataAttr);
+                            newCheckboxes.forEach((cb) => {
+                                const checkboxValue = parseInt(cb.value);
+                                if (
+                                    associatedPromptIds.includes(checkboxValue)
+                                ) {
+                                    cb.checked = true;
+                                }
+                                cb.removeAttribute("data-auto-check");
+                            });
+
+                            if (newCheckboxes.length > 0) {
+                                const event = new Event("change", {
+                                    bubbles: true,
+                                });
+                                container.dispatchEvent(event);
+                            }
+                        } catch (e) {
+                            console.error(
+                                "Error parsing data-server-prompts:",
+                                e,
+                            );
+                        }
+                    }
+                }
+            }, 10);
+        }
+    });
 }
 
 // ===================================================================
@@ -3650,13 +5771,217 @@ function showTab(tabName) {
                         loadAggregatedMetrics();
                     }
                 }
+                if (tabName === "llm-chat") {
+                    initializeLLMChat();
+                }
+
+                if (tabName === "teams") {
+                    // Load Teams list if not already loaded
+                    const teamsList = safeGetElement("teams-list");
+                    if (teamsList) {
+                        // Check if it's still showing the loading message or is empty
+                        const hasLoadingMessage =
+                            teamsList.innerHTML.includes("Loading teams...");
+                        const isEmpty = teamsList.innerHTML.trim() === "";
+                        if (hasLoadingMessage || isEmpty) {
+                            // Trigger HTMX load manually if HTMX is available
+                            if (window.htmx && window.htmx.trigger) {
+                                window.htmx.trigger(teamsList, "load");
+                            }
+                        }
+                    }
+                }
+
+                if (tabName === "tokens") {
+                    // Load Tokens list and set up form handling
+                    const tokensList = safeGetElement("tokens-list");
+                    if (tokensList) {
+                        const hasLoadingMessage =
+                            tokensList.innerHTML.includes("Loading tokens...");
+                        const isEmpty = !tokensList.innerHTML.trim();
+                        if (hasLoadingMessage || isEmpty) {
+                            loadTokensList();
+                        }
+                    }
+
+                    // Set up create token form if not already set up
+                    const createForm = safeGetElement("create-token-form");
+                    if (createForm && !createForm.hasAttribute("data-setup")) {
+                        setupCreateTokenForm();
+                        createForm.setAttribute("data-setup", "true");
+                    }
+
+                    // Update team scoping warning when switching to tokens tab
+                    updateTeamScopingWarning();
+                }
 
                 if (tabName === "a2a-agents") {
                     // Load A2A agents list if not already loaded
                     const agentsList = safeGetElement("a2a-agents-list");
                     if (agentsList && agentsList.innerHTML.trim() === "") {
-                        // Trigger HTMX load manually
-                        window.htmx.trigger(agentsList, "load");
+                        // Trigger HTMX load manually if HTMX is available
+                        if (window.htmx && window.htmx.trigger) {
+                            window.htmx.trigger(agentsList, "load");
+                        }
+                    }
+                }
+
+                if (tabName === "mcp-registry") {
+                    // Load MCP Registry content
+                    const registryContent = safeGetElement(
+                        "mcp-registry-servers",
+                    );
+                    if (registryContent) {
+                        // Always load on first visit or if showing loading message
+                        const hasLoadingMessage =
+                            registryContent.innerHTML.includes(
+                                "Loading MCP Registry servers...",
+                            );
+                        const needsLoad =
+                            hasLoadingMessage ||
+                            !registryContent.getAttribute("data-loaded");
+
+                        if (needsLoad) {
+                            const rootPath = window.ROOT_PATH || "";
+
+                            // Use HTMX if available
+                            if (window.htmx && window.htmx.ajax) {
+                                window.htmx
+                                    .ajax(
+                                        "GET",
+                                        `${rootPath}/admin/mcp-registry/partial`,
+                                        {
+                                            target: "#mcp-registry-servers",
+                                            swap: "innerHTML",
+                                        },
+                                    )
+                                    .then(() => {
+                                        registryContent.setAttribute(
+                                            "data-loaded",
+                                            "true",
+                                        );
+                                    });
+                            } else {
+                                // Fallback to fetch if HTMX is not available
+                                fetch(`${rootPath}/admin/mcp-registry/partial`)
+                                    .then((response) => response.text())
+                                    .then((html) => {
+                                        registryContent.innerHTML = html;
+                                        registryContent.setAttribute(
+                                            "data-loaded",
+                                            "true",
+                                        );
+                                        // Process any HTMX attributes in the new content
+                                        if (window.htmx) {
+                                            window.htmx.process(
+                                                registryContent,
+                                            );
+                                        }
+                                    })
+                                    .catch((error) => {
+                                        console.error(
+                                            "Failed to load MCP Registry:",
+                                            error,
+                                        );
+                                        registryContent.innerHTML =
+                                            '<div class="text-center text-red-600 py-8">Failed to load MCP Registry servers</div>';
+                                    });
+                            }
+                        }
+                    }
+                }
+
+                if (tabName === "gateways") {
+                    // Reload gateways list to show any newly registered servers
+                    const gatewaysSection = safeGetElement("gateways-section");
+                    if (gatewaysSection) {
+                        const gatewaysTbody =
+                            gatewaysSection.querySelector("tbody");
+                        if (gatewaysTbody) {
+                            // Trigger HTMX reload if available
+                            if (window.htmx && window.htmx.trigger) {
+                                window.htmx.trigger(gatewaysTbody, "load");
+                            } else {
+                                // Fallback: reload the page section via fetch
+                                const rootPath = window.ROOT_PATH || "";
+                                fetch(`${rootPath}/admin`)
+                                    .then((response) => response.text())
+                                    .then((html) => {
+                                        // Parse the HTML and extract just the gateways table
+                                        const parser = new DOMParser();
+                                        const doc = parser.parseFromString(
+                                            html,
+                                            "text/html",
+                                        );
+                                        const newTbody = doc.querySelector(
+                                            "#gateways-section tbody",
+                                        );
+                                        if (newTbody) {
+                                            gatewaysTbody.innerHTML =
+                                                newTbody.innerHTML;
+                                            // Process any HTMX attributes in the new content
+                                            if (window.htmx) {
+                                                window.htmx.process(
+                                                    gatewaysTbody,
+                                                );
+                                            }
+                                        }
+                                    })
+                                    .catch((error) => {
+                                        console.error(
+                                            "Failed to reload gateways:",
+                                            error,
+                                        );
+                                    });
+                            }
+                        }
+                    }
+                }
+
+                if (tabName === "plugins") {
+                    const pluginsPanel = safeGetElement("plugins-panel");
+                    if (pluginsPanel && pluginsPanel.innerHTML.trim() === "") {
+                        const rootPath = window.ROOT_PATH || "";
+                        fetchWithTimeout(
+                            `${rootPath}/admin/plugins/partial`,
+                            {
+                                method: "GET",
+                                credentials: "same-origin",
+                                headers: {
+                                    Accept: "text/html",
+                                },
+                            },
+                            5000,
+                        )
+                            .then((response) => {
+                                if (!response.ok) {
+                                    throw new Error(
+                                        `HTTP error! status: ${response.status}`,
+                                    );
+                                }
+                                return response.text();
+                            })
+                            .then((html) => {
+                                pluginsPanel.innerHTML = html;
+                                // Initialize plugin functions after HTML is loaded
+                                initializePluginFunctions();
+                                // Populate filter dropdowns
+                                if (window.populatePluginFilters) {
+                                    window.populatePluginFilters();
+                                }
+                            })
+                            .catch((error) => {
+                                console.error(
+                                    "Error loading plugins partial:",
+                                    error,
+                                );
+                                pluginsPanel.innerHTML = `
+                                    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                                        <strong class="font-bold">Error loading plugins:</strong>
+                                        <span class="block sm:inline">${escapeHtml(error.message)}</span>
+                                    </div>
+                                `;
+                            });
                     }
                 }
 
@@ -3666,7 +5991,7 @@ function showTab(tabName) {
                         fetchWithTimeout(
                             `${window.ROOT_PATH}/version?partial=true`,
                             {},
-                            10000,
+                            window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000,
                         )
                             .then((resp) => {
                                 if (!resp.ok) {
@@ -3718,6 +6043,30 @@ function showTab(tabName) {
                         }
                     }
                 }
+
+                if (tabName === "permissions") {
+                    // Initialize permissions panel when tab is shown
+                    if (!panel.classList.contains("hidden")) {
+                        console.log("🔄 Initializing permissions tab content");
+                        try {
+                            // Check if initializePermissionsPanel function exists
+                            if (
+                                typeof initializePermissionsPanel === "function"
+                            ) {
+                                initializePermissionsPanel();
+                            } else {
+                                console.warn(
+                                    "initializePermissionsPanel function not found",
+                                );
+                            }
+                        } catch (error) {
+                            console.error(
+                                "Error initializing permissions panel:",
+                                error,
+                            );
+                        }
+                    }
+                }
             } catch (error) {
                 console.error(
                     `Error in tab ${tabName} content loading:`,
@@ -3733,6 +6082,7 @@ function showTab(tabName) {
     }
 }
 
+window.showTab = showTab;
 // ===================================================================
 // AUTH HANDLING
 // ===================================================================
@@ -4185,24 +6535,100 @@ function initToolSelect(
         return;
     }
 
-    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
     const pillClasses =
-        "inline-block px-3 py-1 text-xs font-semibold text-indigo-700 bg-indigo-100 rounded-full shadow";
+        "inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full dark:bg-green-900 dark:text-green-200";
 
     function update() {
         try {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
             const checked = Array.from(checkboxes).filter((cb) => cb.checked);
-            const count = checked.length;
 
-            // Rebuild pills safely
+            // Check if "Select All" mode is active
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllTools"]',
+            );
+            const allIdsInput = container.querySelector(
+                'input[name="allToolIds"]',
+            );
+
+            // Check if this is the edit server tools container
+            const isEditServerMode = selectId === "edit-server-tools";
+            let serverTools = null;
+
+            if (isEditServerMode) {
+                const dataAttr = container.getAttribute("data-server-tools");
+                if (dataAttr) {
+                    try {
+                        serverTools = JSON.parse(dataAttr);
+                    } catch (e) {
+                        console.error("Error parsing data-server-tools:", e);
+                    }
+                }
+            }
+
+            let count = checked.length;
+
+            // If Select All mode is active, use the count from allToolIds
+            if (
+                selectAllInput &&
+                selectAllInput.value === "true" &&
+                allIdsInput
+            ) {
+                try {
+                    const allIds = JSON.parse(allIdsInput.value);
+                    count = allIds.length;
+                } catch (e) {
+                    console.error("Error parsing allToolIds:", e);
+                }
+            }
+            // If in edit server mode and we have server tools data, use that count
+            else if (
+                isEditServerMode &&
+                serverTools &&
+                Array.isArray(serverTools)
+            ) {
+                count = serverTools.length;
+            }
+
+            // Rebuild pills safely - show first 3, then summarize the rest
             pillsBox.innerHTML = "";
-            checked.forEach((cb) => {
+            const maxPillsToShow = 3;
+
+            // In edit server mode, we want to show the server tools rather than just currently checked ones
+            let pillsToDisplay = checked;
+            if (
+                isEditServerMode &&
+                serverTools &&
+                Array.isArray(serverTools) &&
+                window.toolMapping
+            ) {
+                // Create a list of tools that exist both in serverTools and currently loaded tools
+                const allLoadedTools = Array.from(checkboxes);
+                pillsToDisplay = allLoadedTools.filter((checkbox) => {
+                    const toolName = window.toolMapping[checkbox.value];
+                    return toolName && serverTools.includes(toolName);
+                });
+            }
+
+            pillsToDisplay.slice(0, maxPillsToShow).forEach((cb) => {
                 const span = document.createElement("span");
                 span.className = pillClasses;
                 span.textContent =
                     cb.nextElementSibling?.textContent?.trim() || "Unnamed";
                 pillsBox.appendChild(span);
             });
+
+            // If more than maxPillsToShow, show a summary pill
+            if (count > maxPillsToShow) {
+                const span = document.createElement("span");
+                span.className = pillClasses + " cursor-pointer";
+                span.title = "Click to see all selected tools";
+                const remaining = count - maxPillsToShow;
+                span.textContent = `+${remaining} more`;
+                pillsBox.appendChild(span);
+            }
 
             // Warning when > max
             if (count > max) {
@@ -4215,22 +6641,649 @@ function initToolSelect(
         }
     }
 
-    if (clearBtn) {
-        clearBtn.addEventListener("click", () => {
+    // Remove old event listeners by cloning and replacing (preserving ID)
+    if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.dataset.listenerAttached = "true";
+        const newClearBtn = clearBtn.cloneNode(true);
+        newClearBtn.dataset.listenerAttached = "true";
+        clearBtn.parentNode.replaceChild(newClearBtn, clearBtn);
+
+        newClearBtn.addEventListener("click", () => {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
             checkboxes.forEach((cb) => (cb.checked = false));
+
+            // Clear the "select all" flag
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllTools"]',
+            );
+            if (selectAllInput) {
+                selectAllInput.remove();
+            }
+            const allIdsInput = container.querySelector(
+                'input[name="allToolIds"]',
+            );
+            if (allIdsInput) {
+                allIdsInput.remove();
+            }
+
             update();
         });
     }
 
-    if (selectBtn) {
-        selectBtn.addEventListener("click", () => {
-            checkboxes.forEach((cb) => (cb.checked = true));
-            update();
+    if (selectBtn && !selectBtn.dataset.listenerAttached) {
+        selectBtn.dataset.listenerAttached = "true";
+        const newSelectBtn = selectBtn.cloneNode(true);
+        newSelectBtn.dataset.listenerAttached = "true";
+        selectBtn.parentNode.replaceChild(newSelectBtn, selectBtn);
+
+        newSelectBtn.addEventListener("click", async () => {
+            // Disable button and show loading state
+            const originalText = newSelectBtn.textContent;
+            newSelectBtn.disabled = true;
+            newSelectBtn.textContent = "Selecting all tools...";
+
+            try {
+                // Fetch all tool IDs from the server
+                const response = await fetch(
+                    `${window.ROOT_PATH}/admin/tools/ids`,
+                );
+                if (!response.ok) {
+                    throw new Error("Failed to fetch tool IDs");
+                }
+
+                const data = await response.json();
+                const allToolIds = data.tool_ids || [];
+
+                // Check all currently loaded checkboxes
+                const loadedCheckboxes = container.querySelectorAll(
+                    'input[type="checkbox"]',
+                );
+                loadedCheckboxes.forEach((cb) => (cb.checked = true));
+
+                // Add a hidden input to indicate "select all" mode
+                // Remove any existing one first
+                let selectAllInput = container.querySelector(
+                    'input[name="selectAllTools"]',
+                );
+                if (!selectAllInput) {
+                    selectAllInput = document.createElement("input");
+                    selectAllInput.type = "hidden";
+                    selectAllInput.name = "selectAllTools";
+                    container.appendChild(selectAllInput);
+                }
+                selectAllInput.value = "true";
+
+                // Also store the IDs as a JSON array for the backend
+                let allIdsInput = container.querySelector(
+                    'input[name="allToolIds"]',
+                );
+                if (!allIdsInput) {
+                    allIdsInput = document.createElement("input");
+                    allIdsInput.type = "hidden";
+                    allIdsInput.name = "allToolIds";
+                    container.appendChild(allIdsInput);
+                }
+                allIdsInput.value = JSON.stringify(allToolIds);
+
+                update();
+
+                newSelectBtn.textContent = `✓ All ${allToolIds.length} tools selected`;
+                setTimeout(() => {
+                    newSelectBtn.textContent = originalText;
+                }, 2000);
+            } catch (error) {
+                console.error("Error in Select All:", error);
+                alert("Failed to select all tools. Please try again.");
+                newSelectBtn.disabled = false;
+                newSelectBtn.textContent = originalText;
+            } finally {
+                newSelectBtn.disabled = false;
+            }
         });
     }
 
     update(); // Initial render
-    checkboxes.forEach((cb) => cb.addEventListener("change", update));
+
+    // Attach change listeners to checkboxes (using delegation for dynamic content)
+    if (!container.dataset.changeListenerAttached) {
+        container.dataset.changeListenerAttached = "true";
+        container.addEventListener("change", (e) => {
+            if (e.target.type === "checkbox") {
+                // Check if we're in "Select All" mode
+                const selectAllInput = container.querySelector(
+                    'input[name="selectAllTools"]',
+                );
+                const allIdsInput = container.querySelector(
+                    'input[name="allToolIds"]',
+                );
+
+                if (
+                    selectAllInput &&
+                    selectAllInput.value === "true" &&
+                    allIdsInput
+                ) {
+                    // User is manually checking/unchecking after Select All
+                    // Update the allToolIds array to reflect the change
+                    try {
+                        let allIds = JSON.parse(allIdsInput.value);
+                        const toolId = e.target.value;
+
+                        if (e.target.checked) {
+                            // Add the ID if it's not already there
+                            if (!allIds.includes(toolId)) {
+                                allIds.push(toolId);
+                            }
+                        } else {
+                            // Remove the ID from the array
+                            allIds = allIds.filter((id) => id !== toolId);
+                        }
+
+                        // Update the hidden field
+                        allIdsInput.value = JSON.stringify(allIds);
+                    } catch (error) {
+                        console.error("Error updating allToolIds:", error);
+                    }
+                }
+                // Check if we're in edit server mode
+                else if (selectId === "edit-server-tools") {
+                    // In edit server mode, update the server tools data based on checkbox state
+                    const dataAttr =
+                        container.getAttribute("data-server-tools");
+                    let serverTools = [];
+
+                    if (dataAttr) {
+                        try {
+                            serverTools = JSON.parse(dataAttr);
+                        } catch (e) {
+                            console.error(
+                                "Error parsing data-server-tools:",
+                                e,
+                            );
+                        }
+                    }
+
+                    // Get the tool name from toolMapping to update serverTools array
+                    const toolId = e.target.value;
+                    const toolName =
+                        window.toolMapping && window.toolMapping[toolId];
+
+                    if (toolName) {
+                        if (e.target.checked) {
+                            // Add tool name to server tools if not already there
+                            if (!serverTools.includes(toolName)) {
+                                serverTools.push(toolName);
+                            }
+                        } else {
+                            // Remove tool name from server tools
+                            serverTools = serverTools.filter(
+                                (name) => name !== toolName,
+                            );
+                        }
+
+                        // Update the data attribute
+                        container.setAttribute(
+                            "data-server-tools",
+                            JSON.stringify(serverTools),
+                        );
+                    }
+                }
+
+                update();
+            }
+        });
+    }
+}
+
+function initResourceSelect(
+    selectId,
+    pillsId,
+    warnId,
+    max = 10,
+    selectBtnId = null,
+    clearBtnId = null,
+) {
+    const container = document.getElementById(selectId);
+    const pillsBox = document.getElementById(pillsId);
+    const warnBox = document.getElementById(warnId);
+    const clearBtn = clearBtnId ? document.getElementById(clearBtnId) : null;
+    const selectBtn = selectBtnId ? document.getElementById(selectBtnId) : null;
+
+    if (!container || !pillsBox || !warnBox) {
+        console.warn(
+            `Resource select elements not found: ${selectId}, ${pillsId}, ${warnId}`,
+        );
+        return;
+    }
+
+    const pillClasses =
+        "inline-block px-3 py-1 text-xs font-semibold text-blue-700 bg-blue-100 rounded-full shadow dark:text-blue-300 dark:bg-blue-900";
+
+    function update() {
+        try {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
+            const checked = Array.from(checkboxes).filter((cb) => cb.checked);
+            // const count = checked.length;
+
+            // Select All handling
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllResources"]',
+            );
+            const allIdsInput = container.querySelector(
+                'input[name="allResourceIds"]',
+            );
+
+            let count = checked.length;
+            if (
+                selectAllInput &&
+                selectAllInput.value === "true" &&
+                allIdsInput
+            ) {
+                try {
+                    const allIds = JSON.parse(allIdsInput.value);
+                    count = allIds.length;
+                } catch (e) {
+                    console.error("Error parsing allResourceIds:", e);
+                }
+            }
+
+            // Rebuild pills safely - show first 3, then summarize the rest
+            pillsBox.innerHTML = "";
+            const maxPillsToShow = 3;
+
+            checked.slice(0, maxPillsToShow).forEach((cb) => {
+                const span = document.createElement("span");
+                span.className = pillClasses;
+                span.textContent =
+                    cb.nextElementSibling?.textContent?.trim() || "Unnamed";
+                pillsBox.appendChild(span);
+            });
+
+            // If more than maxPillsToShow, show a summary pill
+            if (count > maxPillsToShow) {
+                const span = document.createElement("span");
+                span.className = pillClasses + " cursor-pointer";
+                span.title = "Click to see all selected resources";
+                const remaining = count - maxPillsToShow;
+                span.textContent = `+${remaining} more`;
+                pillsBox.appendChild(span);
+            }
+
+            // Warning when > max
+            if (count > max) {
+                warnBox.textContent = `Selected ${count} resources. Selecting more than ${max} resources can degrade agent performance with the server.`;
+            } else {
+                warnBox.textContent = "";
+            }
+        } catch (error) {
+            console.error("Error updating resource select:", error);
+        }
+    }
+
+    // Remove old event listeners by cloning and replacing (preserving ID)
+    if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.dataset.listenerAttached = "true";
+        const newClearBtn = clearBtn.cloneNode(true);
+        newClearBtn.dataset.listenerAttached = "true";
+        clearBtn.parentNode.replaceChild(newClearBtn, clearBtn);
+
+        newClearBtn.addEventListener("click", () => {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
+            checkboxes.forEach((cb) => (cb.checked = false));
+
+            // Remove any select-all hidden inputs
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllResources"]',
+            );
+            if (selectAllInput) {
+                selectAllInput.remove();
+            }
+            const allIdsInput = container.querySelector(
+                'input[name="allResourceIds"]',
+            );
+            if (allIdsInput) {
+                allIdsInput.remove();
+            }
+
+            update();
+        });
+    }
+
+    if (selectBtn && !selectBtn.dataset.listenerAttached) {
+        selectBtn.dataset.listenerAttached = "true";
+        const newSelectBtn = selectBtn.cloneNode(true);
+        newSelectBtn.dataset.listenerAttached = "true";
+        selectBtn.parentNode.replaceChild(newSelectBtn, selectBtn);
+
+        newSelectBtn.addEventListener("click", async () => {
+            const originalText = newSelectBtn.textContent;
+            newSelectBtn.disabled = true;
+            newSelectBtn.textContent = "Selecting all resources...";
+
+            try {
+                const resp = await fetch(
+                    `${window.ROOT_PATH}/admin/resources/ids`,
+                );
+                if (!resp.ok) {
+                    throw new Error("Failed to fetch resource IDs");
+                }
+                const data = await resp.json();
+                const allIds = data.resource_ids || [];
+
+                // Check all currently loaded checkboxes
+                const loadedCheckboxes = container.querySelectorAll(
+                    'input[type="checkbox"]',
+                );
+                loadedCheckboxes.forEach((cb) => (cb.checked = true));
+
+                // Add hidden select-all flag
+                let selectAllInput = container.querySelector(
+                    'input[name="selectAllResources"]',
+                );
+                if (!selectAllInput) {
+                    selectAllInput = document.createElement("input");
+                    selectAllInput.type = "hidden";
+                    selectAllInput.name = "selectAllResources";
+                    container.appendChild(selectAllInput);
+                }
+                selectAllInput.value = "true";
+
+                // Store IDs as JSON for backend handling
+                let allIdsInput = container.querySelector(
+                    'input[name="allResourceIds"]',
+                );
+                if (!allIdsInput) {
+                    allIdsInput = document.createElement("input");
+                    allIdsInput.type = "hidden";
+                    allIdsInput.name = "allResourceIds";
+                    container.appendChild(allIdsInput);
+                }
+                allIdsInput.value = JSON.stringify(allIds);
+
+                update();
+
+                newSelectBtn.textContent = `✓ All ${allIds.length} resources selected`;
+                setTimeout(() => {
+                    newSelectBtn.textContent = originalText;
+                }, 2000);
+            } catch (error) {
+                console.error("Error selecting all resources:", error);
+                alert("Failed to select all resources. Please try again.");
+            } finally {
+                newSelectBtn.disabled = false;
+            }
+        });
+    }
+
+    update(); // Initial render
+
+    // Attach change listeners using delegation for dynamic content
+    if (!container.dataset.changeListenerAttached) {
+        container.dataset.changeListenerAttached = "true";
+        container.addEventListener("change", (e) => {
+            if (e.target.type === "checkbox") {
+                // If Select All mode is active, update the stored IDs array
+                const selectAllInput = container.querySelector(
+                    'input[name="selectAllResources"]',
+                );
+                const allIdsInput = container.querySelector(
+                    'input[name="allResourceIds"]',
+                );
+
+                if (
+                    selectAllInput &&
+                    selectAllInput.value === "true" &&
+                    allIdsInput
+                ) {
+                    try {
+                        let allIds = JSON.parse(allIdsInput.value);
+                        const id = e.target.value;
+                        if (e.target.checked) {
+                            if (!allIds.includes(id)) {
+                                allIds.push(id);
+                            }
+                        } else {
+                            allIds = allIds.filter((x) => x !== id);
+                        }
+                        allIdsInput.value = JSON.stringify(allIds);
+                    } catch (err) {
+                        console.error("Error updating allResourceIds:", err);
+                    }
+                }
+
+                update();
+            }
+        });
+    }
+}
+
+function initPromptSelect(
+    selectId,
+    pillsId,
+    warnId,
+    max = 8,
+    selectBtnId = null,
+    clearBtnId = null,
+) {
+    const container = document.getElementById(selectId);
+    const pillsBox = document.getElementById(pillsId);
+    const warnBox = document.getElementById(warnId);
+    const clearBtn = clearBtnId ? document.getElementById(clearBtnId) : null;
+    const selectBtn = selectBtnId ? document.getElementById(selectBtnId) : null;
+
+    if (!container || !pillsBox || !warnBox) {
+        console.warn(
+            `Prompt select elements not found: ${selectId}, ${pillsId}, ${warnId}`,
+        );
+        return;
+    }
+
+    const pillClasses =
+        "inline-block px-3 py-1 text-xs font-semibold text-purple-700 bg-purple-100 rounded-full shadow dark:text-purple-300 dark:bg-purple-900";
+
+    function update() {
+        try {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
+            const checked = Array.from(checkboxes).filter((cb) => cb.checked);
+
+            // Determine count: if Select All mode is active, use the stored allPromptIds
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllPrompts"]',
+            );
+            const allIdsInput = container.querySelector(
+                'input[name="allPromptIds"]',
+            );
+
+            let count = checked.length;
+            if (
+                selectAllInput &&
+                selectAllInput.value === "true" &&
+                allIdsInput
+            ) {
+                try {
+                    const allIds = JSON.parse(allIdsInput.value);
+                    count = allIds.length;
+                } catch (e) {
+                    console.error("Error parsing allPromptIds:", e);
+                }
+            }
+
+            // Rebuild pills safely - show first 3, then summarize the rest
+            pillsBox.innerHTML = "";
+            const maxPillsToShow = 3;
+
+            checked.slice(0, maxPillsToShow).forEach((cb) => {
+                const span = document.createElement("span");
+                span.className = pillClasses;
+                span.textContent =
+                    cb.nextElementSibling?.textContent?.trim() || "Unnamed";
+                pillsBox.appendChild(span);
+            });
+
+            // If more than maxPillsToShow, show a summary pill
+            if (count > maxPillsToShow) {
+                const span = document.createElement("span");
+                span.className = pillClasses + " cursor-pointer";
+                span.title = "Click to see all selected prompts";
+                const remaining = count - maxPillsToShow;
+                span.textContent = `+${remaining} more`;
+                pillsBox.appendChild(span);
+            }
+
+            // Warning when > max
+            if (count > max) {
+                warnBox.textContent = `Selected ${count} prompts. Selecting more than ${max} prompts can degrade agent performance with the server.`;
+            } else {
+                warnBox.textContent = "";
+            }
+        } catch (error) {
+            console.error("Error updating prompt select:", error);
+        }
+    }
+
+    // Remove old event listeners by cloning and replacing (preserving ID)
+    if (clearBtn && !clearBtn.dataset.listenerAttached) {
+        clearBtn.dataset.listenerAttached = "true";
+        const newClearBtn = clearBtn.cloneNode(true);
+        newClearBtn.dataset.listenerAttached = "true";
+        clearBtn.parentNode.replaceChild(newClearBtn, clearBtn);
+
+        newClearBtn.addEventListener("click", () => {
+            const checkboxes = container.querySelectorAll(
+                'input[type="checkbox"]',
+            );
+            checkboxes.forEach((cb) => (cb.checked = false));
+
+            // Remove any select-all hidden inputs
+            const selectAllInput = container.querySelector(
+                'input[name="selectAllPrompts"]',
+            );
+            if (selectAllInput) {
+                selectAllInput.remove();
+            }
+            const allIdsInput = container.querySelector(
+                'input[name="allPromptIds"]',
+            );
+            if (allIdsInput) {
+                allIdsInput.remove();
+            }
+
+            update();
+        });
+    }
+
+    if (selectBtn && !selectBtn.dataset.listenerAttached) {
+        selectBtn.dataset.listenerAttached = "true";
+        const newSelectBtn = selectBtn.cloneNode(true);
+        newSelectBtn.dataset.listenerAttached = "true";
+        selectBtn.parentNode.replaceChild(newSelectBtn, selectBtn);
+        newSelectBtn.addEventListener("click", async () => {
+            const originalText = newSelectBtn.textContent;
+            newSelectBtn.disabled = true;
+            newSelectBtn.textContent = "Selecting all prompts...";
+
+            try {
+                const resp = await fetch(
+                    `${window.ROOT_PATH}/admin/prompts/ids`,
+                );
+                if (!resp.ok) {
+                    throw new Error("Failed to fetch prompt IDs");
+                }
+                const data = await resp.json();
+                const allIds = data.prompt_ids || [];
+
+                // Check all currently loaded checkboxes
+                const loadedCheckboxes = container.querySelectorAll(
+                    'input[type="checkbox"]',
+                );
+                loadedCheckboxes.forEach((cb) => (cb.checked = true));
+
+                // Add hidden select-all flag
+                let selectAllInput = container.querySelector(
+                    'input[name="selectAllPrompts"]',
+                );
+                if (!selectAllInput) {
+                    selectAllInput = document.createElement("input");
+                    selectAllInput.type = "hidden";
+                    selectAllInput.name = "selectAllPrompts";
+                    container.appendChild(selectAllInput);
+                }
+                selectAllInput.value = "true";
+
+                // Store IDs as JSON for backend handling
+                let allIdsInput = container.querySelector(
+                    'input[name="allPromptIds"]',
+                );
+                if (!allIdsInput) {
+                    allIdsInput = document.createElement("input");
+                    allIdsInput.type = "hidden";
+                    allIdsInput.name = "allPromptIds";
+                    container.appendChild(allIdsInput);
+                }
+                allIdsInput.value = JSON.stringify(allIds);
+
+                update();
+
+                newSelectBtn.textContent = `✓ All ${allIds.length} prompts selected`;
+                setTimeout(() => {
+                    newSelectBtn.textContent = originalText;
+                }, 2000);
+            } catch (error) {
+                console.error("Error selecting all prompts:", error);
+                alert("Failed to select all prompts. Please try again.");
+            } finally {
+                newSelectBtn.disabled = false;
+            }
+        });
+    }
+
+    update(); // Initial render
+
+    // Attach change listeners using delegation for dynamic content
+    if (!container.dataset.changeListenerAttached) {
+        container.dataset.changeListenerAttached = "true";
+        container.addEventListener("change", (e) => {
+            if (e.target.type === "checkbox") {
+                // If Select All mode is active, update the stored IDs array
+                const selectAllInput = container.querySelector(
+                    'input[name="selectAllPrompts"]',
+                );
+                const allIdsInput = container.querySelector(
+                    'input[name="allPromptIds"]',
+                );
+
+                if (
+                    selectAllInput &&
+                    selectAllInput.value === "true" &&
+                    allIdsInput
+                ) {
+                    try {
+                        let allIds = JSON.parse(allIdsInput.value);
+                        const id = e.target.value;
+                        if (e.target.checked) {
+                            if (!allIds.includes(id)) {
+                                allIds.push(id);
+                            }
+                        } else {
+                            allIds = allIds.filter((x) => x !== id);
+                        }
+                        allIdsInput.value = JSON.stringify(allIds);
+                    } catch (err) {
+                        console.error("Error updating allPromptIds:", err);
+                    }
+                }
+
+                update();
+            }
+        });
+    }
 }
 
 // ===================================================================
@@ -4243,13 +7296,110 @@ function toggleInactiveItems(type) {
         return;
     }
 
-    const url = new URL(window.location);
-    if (checkbox.checked) {
-        url.searchParams.set("include_inactive", "true");
-    } else {
-        url.searchParams.delete("include_inactive");
+    // Update URL in address bar (no navigation) so state is reflected
+    try {
+        const urlObj = new URL(window.location);
+        if (checkbox.checked) {
+            urlObj.searchParams.set("include_inactive", "true");
+        } else {
+            urlObj.searchParams.delete("include_inactive");
+        }
+        // Use replaceState to avoid adding history entries for every toggle
+        window.history.replaceState({}, document.title, urlObj.toString());
+    } catch (e) {
+        // ignore (shouldn't happen)
     }
-    window.location = url;
+
+    // Try to find the HTMX container that loads this entity's partial
+    // Prefer an element with hx-get containing the admin partial endpoint
+    const selector = `[hx-get*="/admin/${type}/partial"]`;
+    let container = document.querySelector(selector);
+
+    // Fallback to conventional id naming used in templates
+    if (!container) {
+        const fallbackId =
+            type === "tools" ? "tools-table" : `${type}-list-container`;
+        container = document.getElementById(fallbackId);
+    }
+
+    if (!container) {
+        // If we couldn't find a container, fallback to full-page reload
+        const fallbackUrl = new URL(window.location);
+        if (checkbox.checked) {
+            fallbackUrl.searchParams.set("include_inactive", "true");
+        } else {
+            fallbackUrl.searchParams.delete("include_inactive");
+        }
+        window.location = fallbackUrl;
+        return;
+    }
+
+    // Build request URL based on the hx-get attribute or container id
+    const base =
+        container.getAttribute("hx-get") ||
+        container.getAttribute("data-hx-get") ||
+        "";
+    let reqUrl;
+    try {
+        if (base) {
+            // base may already include query params; construct URL and set include_inactive/page
+            reqUrl = new URL(base, window.location.origin);
+            // reset to page 1 when toggling
+            reqUrl.searchParams.set("page", "1");
+            if (checkbox.checked) {
+                reqUrl.searchParams.set("include_inactive", "true");
+            } else {
+                reqUrl.searchParams.delete("include_inactive");
+            }
+        } else {
+            // construct from known pattern
+            const root = window.ROOT_PATH || "";
+            reqUrl = new URL(
+                `${root}/admin/${type}/partial?page=1&per_page=50`,
+                window.location.origin,
+            );
+            if (checkbox.checked) {
+                reqUrl.searchParams.set("include_inactive", "true");
+            }
+        }
+    } catch (e) {
+        // fallback to full reload
+        const fallbackUrl2 = new URL(window.location);
+        if (checkbox.checked) {
+            fallbackUrl2.searchParams.set("include_inactive", "true");
+        } else {
+            fallbackUrl2.searchParams.delete("include_inactive");
+        }
+        window.location = fallbackUrl2;
+        return;
+    }
+
+    // Determine indicator selector
+    const indicator =
+        container.getAttribute("hx-indicator") || `#${type}-loading`;
+
+    // Use HTMX to reload only the container (outerHTML swap)
+    if (window.htmx && typeof window.htmx.ajax === "function") {
+        try {
+            window.htmx.ajax("GET", reqUrl.toString(), {
+                target: container,
+                swap: "outerHTML",
+                indicator,
+            });
+            return;
+        } catch (e) {
+            // fall through to full reload
+        }
+    }
+
+    // Last resort: reload page with param
+    const finalUrl = new URL(window.location);
+    if (checkbox.checked) {
+        finalUrl.searchParams.set("include_inactive", "true");
+    } else {
+        finalUrl.searchParams.delete("include_inactive");
+    }
+    window.location = finalUrl;
 }
 
 function handleToggleSubmit(event, type) {
@@ -4287,7 +7437,7 @@ const toolTestState = {
     activeRequests: new Map(), // toolId -> AbortController
     lastRequestTime: new Map(), // toolId -> timestamp
     debounceDelay: 1000, // Increased from 500ms
-    requestTimeout: 30000, // Increased from 10000ms
+    requestTimeout: window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000, // Use configurable timeout
 };
 
 let toolInputSchemaRegistry = null;
@@ -4405,7 +7555,8 @@ async function testTool(toolId) {
         }
         if (descElement) {
             if (tool.description) {
-                descElement.innerHTML = tool.description.replace(
+                // Escape HTML and then replace newlines with <br/> tags
+                descElement.innerHTML = escapeHtml(tool.description).replace(
                     /\n/g,
                     "<br/>",
                 );
@@ -4529,6 +7680,15 @@ async function testTool(toolId) {
                         });
 
                         wrapper.appendChild(input);
+
+                        if (itemTypes.includes("boolean")) {
+                            const hidden = document.createElement("input");
+                            hidden.type = "hidden";
+                            hidden.name = keyValidation.value;
+                            hidden.value = "false";
+                            wrapper.appendChild(hidden);
+                        }
+
                         wrapper.appendChild(delBtn);
                         return wrapper;
                     }
@@ -4572,6 +7732,7 @@ async function testTool(toolId) {
                             fieldInput.type = "number";
                         } else if (prop.type === "boolean") {
                             fieldInput.type = "checkbox";
+                            fieldInput.value = "true";
                         } else {
                             fieldInput = document.createElement("textarea");
                             fieldInput.rows = 1;
@@ -4598,6 +7759,15 @@ async function testTool(toolId) {
                     }
 
                     fieldDiv.appendChild(fieldInput);
+                    if (prop.default !== undefined) {
+                        if (fieldInput.type === "checkbox") {
+                            const hiddenInput = document.createElement("input");
+                            hiddenInput.type = "hidden";
+                            hiddenInput.value = "false";
+                            hiddenInput.name = keyValidation.value;
+                            fieldDiv.appendChild(hiddenInput);
+                        }
+                    }
                 }
 
                 container.appendChild(fieldDiv);
@@ -4804,6 +7974,10 @@ async function runToolTest() {
             "Content-Type": "application/json",
         };
 
+        // Authentication will be handled automatically by the JWT cookie
+        // that was set when the admin UI loaded. The 'credentials: "include"'
+        // in the fetch request ensures the cookie is sent with the request.
+
         const passthroughHeadersField = document.getElementById(
             "test-passthrough-headers",
         );
@@ -4857,7 +8031,7 @@ async function runToolTest() {
                 body: JSON.stringify(payload),
                 credentials: "include",
             },
-            20000, // Increased from 8000
+            window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000, // Use configurable timeout
         );
 
         const result = await response.json();
@@ -4982,6 +8156,381 @@ function cleanupToolTestModal() {
 }
 
 // ===================================================================
+// PROMPT TEST FUNCTIONALITY
+// ===================================================================
+
+// State management for prompt testing
+const promptTestState = {
+    lastRequestTime: new Map(),
+    activeRequests: new Set(),
+    currentTestPrompt: null,
+};
+
+/**
+ * Test a prompt by opening the prompt test modal
+ */
+async function testPrompt(promptId) {
+    try {
+        console.log(`Testing prompt ID: ${promptId}`);
+
+        // Debouncing to prevent rapid clicking
+        const now = Date.now();
+        const lastRequest = promptTestState.lastRequestTime.get(promptId) || 0;
+        const timeSinceLastRequest = now - lastRequest;
+        const debounceDelay = 1000;
+
+        if (timeSinceLastRequest < debounceDelay) {
+            console.log(`Prompt ${promptId} test request debounced`);
+            return;
+        }
+
+        // Check if modal is already active
+        if (AppState.isModalActive("prompt-test-modal")) {
+            console.warn("Prompt test modal is already active");
+            return;
+        }
+
+        // Update button state
+        const testButton = document.querySelector(
+            `[onclick*="testPrompt('${promptId}')"]`,
+        );
+        if (testButton) {
+            if (testButton.disabled) {
+                console.log(
+                    "Test button already disabled, request in progress",
+                );
+                return;
+            }
+            testButton.disabled = true;
+            testButton.textContent = "Loading...";
+            testButton.classList.add("opacity-50", "cursor-not-allowed");
+        }
+
+        // Record request time and mark as active
+        promptTestState.lastRequestTime.set(promptId, now);
+        promptTestState.activeRequests.add(promptId);
+
+        // Fetch prompt details
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        try {
+            // Fetch prompt details from the prompts endpoint (view mode)
+            const response = await fetch(
+                `${window.ROOT_PATH}/admin/prompts/${encodeURIComponent(promptId)}`,
+                {
+                    method: "GET",
+                    headers: {
+                        Accept: "application/json",
+                    },
+                    credentials: "include",
+                    signal: controller.signal,
+                },
+            );
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error(
+                    `Failed to fetch prompt details: ${response.status} ${response.statusText}`,
+                );
+            }
+
+            const prompt = await response.json();
+            promptTestState.currentTestPrompt = prompt;
+
+            // Set modal title and description
+            const titleElement = safeGetElement("prompt-test-modal-title");
+            const descElement = safeGetElement("prompt-test-modal-description");
+
+            if (titleElement) {
+                titleElement.textContent = `Test Prompt: ${prompt.name || promptId}`;
+            }
+            if (descElement) {
+                if (prompt.description) {
+                    // Escape HTML and then replace newlines with <br/> tags
+                    descElement.innerHTML = escapeHtml(
+                        prompt.description,
+                    ).replace(/\n/g, "<br/>");
+                } else {
+                    descElement.textContent = "No description available.";
+                }
+            }
+
+            // Build form fields based on prompt arguments
+            buildPromptTestForm(prompt);
+
+            // Open the modal
+            openModal("prompt-test-modal");
+        } catch (error) {
+            clearTimeout(timeoutId);
+
+            if (error.name === "AbortError") {
+                console.warn("Request was cancelled (timeout or user action)");
+                showErrorMessage("Request timed out. Please try again.");
+            } else {
+                console.error("Error fetching prompt details:", error);
+                const errorMessage =
+                    error.message || "Failed to load prompt details";
+                showErrorMessage(`Error testing prompt: ${errorMessage}`);
+            }
+        }
+    } catch (error) {
+        console.error("Error in testPrompt:", error);
+        showErrorMessage(`Error testing prompt: ${error.message}`);
+    } finally {
+        // Always restore button state
+        const testButton = document.querySelector(
+            `[onclick*="testPrompt('${promptId}')"]`,
+        );
+        if (testButton) {
+            testButton.disabled = false;
+            testButton.textContent = "Test";
+            testButton.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+
+        // Clean up state
+        promptTestState.activeRequests.delete(promptId);
+    }
+}
+
+/**
+ * Build the form fields for prompt testing based on prompt arguments
+ */
+function buildPromptTestForm(prompt) {
+    const fieldsContainer = safeGetElement("prompt-test-form-fields");
+    if (!fieldsContainer) {
+        console.error("Prompt test form fields container not found");
+        return;
+    }
+
+    // Clear existing fields
+    fieldsContainer.innerHTML = "";
+
+    if (!prompt.arguments || prompt.arguments.length === 0) {
+        fieldsContainer.innerHTML = `
+            <div class="text-gray-500 dark:text-gray-400 text-sm italic">
+                This prompt has no arguments - it will render as-is.
+            </div>
+        `;
+        return;
+    }
+
+    // Create fields for each prompt argument
+    prompt.arguments.forEach((arg, index) => {
+        const fieldDiv = document.createElement("div");
+        fieldDiv.className = "space-y-2";
+
+        const label = document.createElement("label");
+        label.className =
+            "block text-sm font-medium text-gray-700 dark:text-gray-300";
+        label.textContent = `${arg.name}${arg.required ? " *" : ""}`;
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.id = `prompt-arg-${index}`;
+        input.name = `arg-${arg.name}`;
+        input.className =
+            "mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300";
+
+        if (arg.description) {
+            input.placeholder = arg.description;
+        }
+
+        if (arg.required) {
+            input.required = true;
+        }
+
+        fieldDiv.appendChild(label);
+        if (arg.description) {
+            const description = document.createElement("div");
+            description.className = "text-xs text-gray-500 dark:text-gray-400";
+            description.textContent = arg.description;
+            fieldDiv.appendChild(description);
+        }
+        fieldDiv.appendChild(input);
+
+        fieldsContainer.appendChild(fieldDiv);
+    });
+}
+
+/**
+ * Run the prompt test by calling the API with the provided arguments
+ */
+async function runPromptTest() {
+    const form = safeGetElement("prompt-test-form");
+    const loadingElement = safeGetElement("prompt-test-loading");
+    const resultContainer = safeGetElement("prompt-test-result");
+    const runButton = document.querySelector(
+        'button[onclick="runPromptTest()"]',
+    );
+
+    if (!form || !promptTestState.currentTestPrompt) {
+        console.error("Prompt test form or current prompt not found");
+        showErrorMessage("Prompt test form not available");
+        return;
+    }
+
+    // Prevent multiple concurrent test runs
+    if (runButton && runButton.disabled) {
+        console.log("Prompt test already running");
+        return;
+    }
+
+    try {
+        // Disable button and show loading
+        if (runButton) {
+            runButton.disabled = true;
+            runButton.textContent = "Rendering...";
+        }
+        if (loadingElement) {
+            loadingElement.classList.remove("hidden");
+        }
+        if (resultContainer) {
+            resultContainer.innerHTML = `
+                <div class="text-gray-500 dark:text-gray-400 text-sm italic">
+                    Rendering prompt...
+                </div>
+            `;
+        }
+
+        // Collect form data (prompt arguments)
+        const formData = new FormData(form);
+        const args = {};
+
+        // Parse the form data into arguments object
+        for (const [key, value] of formData.entries()) {
+            if (key.startsWith("arg-")) {
+                const argName = key.substring(4); // Remove 'arg-' prefix
+                args[argName] = value;
+            }
+        }
+
+        // Call the prompt API endpoint
+        const response = await fetch(
+            `${window.ROOT_PATH}/prompts/${encodeURIComponent(promptTestState.currentTestPrompt.name)}`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                credentials: "include",
+                body: JSON.stringify(args),
+            },
+        );
+
+        if (!response.ok) {
+            let errorMessage;
+            try {
+                const errorData = await response.json();
+                errorMessage =
+                    errorData.message ||
+                    `HTTP ${response.status}: ${response.statusText}`;
+
+                // Show more detailed error information
+                if (errorData.details) {
+                    errorMessage += `\nDetails: ${errorData.details}`;
+                }
+            } catch {
+                errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+        }
+
+        const result = await response.json();
+
+        // Display the result
+        if (resultContainer) {
+            let resultHtml = "";
+
+            if (result.messages && Array.isArray(result.messages)) {
+                result.messages.forEach((message, index) => {
+                    resultHtml += `
+                        <div class="mb-4 p-3 bg-white dark:bg-gray-700 rounded border">
+                            <div class="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2">
+                                Message ${index + 1} (${message.role || "unknown"})
+                            </div>
+                            <div class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">${escapeHtml(message.content?.text || JSON.stringify(message.content) || "")}</div>
+                        </div>
+                    `;
+                });
+            } else {
+                resultHtml = `
+                    <div class="text-gray-900 dark:text-gray-100 whitespace-pre-wrap">${escapeHtml(JSON.stringify(result, null, 2))}</div>
+                `;
+            }
+
+            resultContainer.innerHTML = resultHtml;
+        }
+
+        console.log("Prompt rendered successfully");
+    } catch (error) {
+        console.error("Error rendering prompt:", error);
+
+        if (resultContainer) {
+            resultContainer.innerHTML = `
+                <div class="text-red-600 dark:text-red-400 text-sm">
+                    <strong>Error:</strong> ${escapeHtml(error.message)}
+                </div>
+            `;
+        }
+
+        showErrorMessage(`Failed to render prompt: ${error.message}`);
+    } finally {
+        // Hide loading and restore button
+        if (loadingElement) {
+            loadingElement.classList.add("hidden");
+        }
+        if (runButton) {
+            runButton.disabled = false;
+            runButton.textContent = "Render Prompt";
+        }
+    }
+}
+
+/**
+ * Clean up prompt test modal state
+ */
+function cleanupPromptTestModal() {
+    try {
+        // Clear current test prompt
+        promptTestState.currentTestPrompt = null;
+
+        // Reset form
+        const form = safeGetElement("prompt-test-form");
+        if (form) {
+            form.reset();
+        }
+
+        // Clear form fields
+        const fieldsContainer = safeGetElement("prompt-test-form-fields");
+        if (fieldsContainer) {
+            fieldsContainer.innerHTML = "";
+        }
+
+        // Clear result container
+        const resultContainer = safeGetElement("prompt-test-result");
+        if (resultContainer) {
+            resultContainer.innerHTML = `
+                <div class="text-gray-500 dark:text-gray-400 text-sm italic">
+                    Click "Render Prompt" to see the rendered output
+                </div>
+            `;
+        }
+
+        // Hide loading
+        const loadingElement = safeGetElement("prompt-test-loading");
+        if (loadingElement) {
+            loadingElement.classList.add("hidden");
+        }
+
+        console.log("✓ Prompt test modal cleaned up");
+    } catch (error) {
+        console.error("Error cleaning up prompt test modal:", error);
+    }
+}
+
+// ===================================================================
 // ENHANCED GATEWAY TEST FUNCTIONALITY
 // ===================================================================
 
@@ -5102,6 +8651,7 @@ async function handleGatewayTestSubmit(e) {
         const baseUrl = formData.get("url");
         const method = formData.get("method");
         const path = formData.get("path");
+        const contentType = formData.get("content_type") || "application/json";
 
         // Validate URL
         const urlValidation = validateUrl(baseUrl);
@@ -5141,12 +8691,28 @@ async function handleGatewayTestSubmit(e) {
             throw new Error(bodyValidation.error);
         }
 
+        // Process body based on content type
+        let processedBody = bodyValidation.value;
+        if (
+            contentType === "application/x-www-form-urlencoded" &&
+            bodyValidation.value &&
+            typeof bodyValidation.value === "object"
+        ) {
+            // Convert JSON object to URL-encoded string
+            const params = new URLSearchParams();
+            Object.entries(bodyValidation.value).forEach(([key, value]) => {
+                params.append(key, String(value));
+            });
+            processedBody = params.toString();
+        }
+
         const payload = {
             base_url: urlValidation.value,
             method,
             path,
             headers: headersValidation.value,
-            body: bodyValidation.value,
+            body: processedBody,
+            content_type: contentType,
         };
 
         // Make the request with timeout
@@ -5323,7 +8889,7 @@ async function viewTool(toolId) {
         } else {
             authHTML = `
         <span class="font-medium text-gray-700 dark:text-gray-300">Authentication Type:</span>
-        <div class="mt-1 text-sm text-gray-600 dark:text-gray-400">None</div>
+        <div class="mt-1 text-sm">None</div>
       `;
         }
 
@@ -5399,7 +8965,7 @@ async function viewTool(toolId) {
         if (toolDetailsDiv) {
             // Create structure safely without double-escaping
             const safeHTML = `
-        <div class="dark:bg-gray-800 dark:text-gray-300">
+        <div class="bg-transparent dark:bg-transparent dark:text-gray-300">
           <!-- Two Column Layout for Main Info -->
           <div class="grid grid-cols-2 gap-6 mb-6">
             <!-- Left Column -->
@@ -5410,22 +8976,26 @@ async function viewTool(toolId) {
               </div>
               <div>
                 <span class="font-medium text-gray-700 dark:text-gray-300">Technical Name:</span>
-                <div class="mt-1 tool-name text-sm text-gray-600 dark:text-gray-400"></div>
+                <div class="mt-1 tool-name text-sm"></div>
               </div>
               <div>
                 <span class="font-medium text-gray-700 dark:text-gray-300">URL:</span>
-                <div class="mt-1 tool-url text-sm text-gray-600 dark:text-gray-400 break-all"></div>
+                <div class="mt-1 tool-url text-sm"></div>
               </div>
               <div>
                 <span class="font-medium text-gray-700 dark:text-gray-300">Type:</span>
                 <div class="mt-1 tool-type text-sm"></div>
+              </div>
+              <div>
+                <span class="font-medium text-gray-700 dark:text-gray-300">Visibility:</span>
+                <div class="mt-1 tool-visibility text-sm"></div>
               </div>
             </div>
             <!-- Right Column -->
             <div class="space-y-3">
               <div>
                 <span class="font-medium text-gray-700 dark:text-gray-300">Description:</span>
-                <div class="mt-1 tool-description text-sm text-gray-600 dark:text-gray-400"></div>
+                <div class="mt-1 tool-description text-sm"></div>
               </div>
               <div>
                 <span class="font-medium text-gray-700 dark:text-gray-300">Tags:</span>
@@ -5455,6 +9025,10 @@ async function viewTool(toolId) {
             <div>
               <strong class="text-gray-700 dark:text-gray-300">Input Schema:</strong>
               <pre class="mt-1 bg-gray-100 p-3 rounded text-xs dark:bg-gray-800 dark:text-gray-200 tool-schema overflow-x-auto"></pre>
+            </div>
+            <div>
+              <strong class="text-gray-700 dark:text-gray-300">Output Schema:</strong>
+              <pre class="mt-1 bg-gray-100 p-3 rounded text-xs dark:bg-gray-800 dark:text-gray-200 tool-output-schema overflow-x-auto"></pre>
             </div>
           </div>
 
@@ -5501,6 +9075,7 @@ async function viewTool(toolId) {
             </div>
           </div>
           <div class="mt-6 border-t pt-4">
+          <!-- Metadata Section -->
             <strong>Metadata:</strong>
             <div class="grid grid-cols-2 gap-4 mt-2 text-sm">
               <div>
@@ -5512,7 +9087,7 @@ async function viewTool(toolId) {
                 <span class="ml-2 metadata-created-at"></span>
               </div>
               <div>
-                <span class="font-medium text-gray-600 dark:text-gray-400">Created From:</span>
+                <span class="font-medium text-gray-600 dark:text-gray-400">Created From IP:</span>
                 <span class="ml-2 metadata-created-from"></span>
               </div>
               <div>
@@ -5526,6 +9101,14 @@ async function viewTool(toolId) {
               <div>
                 <span class="font-medium text-gray-600 dark:text-gray-400">Last Modified At:</span>
                 <span class="ml-2 metadata-modified-at"></span>
+              </div>
+              <div>
+                <span class="font-medium text-gray-600 dark:text-gray-400">Modified From IP:</span>
+                <span class="ml-2 modified-from"></span>
+              </div>
+              <div>
+                <span class="font-medium text-gray-600 dark:text-gray-400">Modified Via:</span>
+                <span class="ml-2 metadata-modified-via"></span>
               </div>
               <div>
                 <span class="font-medium text-gray-600 dark:text-gray-400">Version:</span>
@@ -5559,6 +9142,7 @@ async function viewTool(toolId) {
             setTextSafely(".tool-url", tool.url);
             setTextSafely(".tool-type", tool.integrationType);
             setTextSafely(".tool-description", tool.description);
+            setTextSafely(".tool-visibility", tool.visibility);
 
             // Set tags as HTML with badges
             const tagsElement = toolDetailsDiv.querySelector(".tool-tags");
@@ -5567,7 +9151,7 @@ async function viewTool(toolId) {
                     tagsElement.innerHTML = tool.tags
                         .map(
                             (tag) =>
-                                `<span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mr-1 mb-1 dark:bg-blue-900 dark:text-blue-200">${tag}</span>`,
+                                `<span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full mr-1 mb-1 dark:bg-blue-900 dark:text-blue-200">${escapeHtml(tag)}</span>`,
                         )
                         .join("");
                 } else {
@@ -5583,6 +9167,10 @@ async function viewTool(toolId) {
             setTextSafely(
                 ".tool-schema",
                 JSON.stringify(tool.inputSchema || {}, null, 2),
+            );
+            setTextSafely(
+                ".tool-output-schema",
+                JSON.stringify(tool.outputSchema || {}, null, 2),
             );
 
             // Set auth fields safely
@@ -5641,33 +9229,48 @@ async function viewTool(toolId) {
             // Set metadata fields safely with appropriate fallbacks for legacy entities
             setTextSafely(
                 ".metadata-created-by",
-                tool.createdBy || "Legacy Entity",
+                tool.created_by || tool.createdBy || "Legacy Entity",
             );
             setTextSafely(
                 ".metadata-created-at",
-                tool.createdAt
-                    ? new Date(tool.createdAt).toLocaleString()
-                    : "Pre-metadata",
+                tool.created_at
+                    ? new Date(tool.created_at).toLocaleString()
+                    : tool.createdAt
+                      ? new Date(tool.createdAt).toLocaleString()
+                      : "Pre-metadata",
             );
             setTextSafely(
                 ".metadata-created-from",
-                tool.createdFromIp || "Unknown",
+                tool.created_from_ip || tool.createdFromIp || "Unknown",
             );
             setTextSafely(
                 ".metadata-created-via",
-                tool.createdVia || "Unknown",
+                tool.created_via || tool.createdVia || "Unknown",
             );
-            setTextSafely(".metadata-modified-by", tool.modifiedBy || "N/A");
+            setTextSafely(
+                ".metadata-modified-by",
+                tool.modified_by || tool.modifiedBy || "N/A",
+            );
             setTextSafely(
                 ".metadata-modified-at",
-                tool.modifiedAt
-                    ? new Date(tool.modifiedAt).toLocaleString()
-                    : "N/A",
+                tool.updated_at
+                    ? new Date(tool.updated_at).toLocaleString()
+                    : tool.updatedAt
+                      ? new Date(tool.updatedAt).toLocaleString()
+                      : "N/A",
+            );
+            setTextSafely(
+                ".metadata-modified-from",
+                tool.modified_from_ip || tool.modifiedFromIp || "N/A",
+            );
+            setTextSafely(
+                ".metadata-modified-via",
+                tool.modified_via || tool.modifiedVia || "N/A",
             );
             setTextSafely(".metadata-version", tool.version || "1");
             setTextSafely(
                 ".metadata-import-batch",
-                tool.importBatchId || "N/A",
+                tool.import_batch_id || tool.importBatchId || "N/A",
             );
         }
 
@@ -5797,65 +9400,49 @@ async function handleGatewayFormSubmit(e) {
         }
 
         // Handle OAuth configuration
+        // NOTE: OAuth config assembly is now handled by the backend (mcpgateway/admin.py)
+        // The backend assembles individual form fields into oauth_config with proper field names
+        // and supports DCR (Dynamic Client Registration) when client_id/client_secret are empty
+        //
+        // Leaving this commented for reference:
+        // const authType = formData.get("auth_type");
+        // if (authType === "oauth") {
+        //     ... backend handles this now ...
+        // }
         const authType = formData.get("auth_type");
-        if (authType === "oauth") {
-            const oauthConfig = {
-                grant_type: formData.get("oauth_grant_type"),
-                client_id: formData.get("oauth_client_id"),
-                client_secret: formData.get("oauth_client_secret"),
-                token_url: formData.get("oauth_token_url"),
-                scopes: formData.get("oauth_scopes")
-                    ? formData
-                          .get("oauth_scopes")
-                          .split(" ")
-                          .filter((s) => s.trim())
-                    : [],
-            };
-
-            // Add authorization code specific fields
-            if (oauthConfig.grant_type === "authorization_code") {
-                oauthConfig.authorization_url = formData.get(
-                    "oauth_authorization_url",
-                );
-                oauthConfig.redirect_uri = formData.get("oauth_redirect_uri");
-
-                // Add token management options
-                oauthConfig.token_management = {
-                    store_tokens: formData.get("oauth_store_tokens") === "on",
-                    auto_refresh: formData.get("oauth_auto_refresh") === "on",
-                    refresh_threshold_seconds: 300,
-                };
-            }
-
-            // Remove individual OAuth fields and add as oauth_config
-            formData.delete("oauth_grant_type");
-            formData.delete("oauth_client_id");
-            formData.delete("oauth_client_secret");
-            formData.delete("oauth_token_url");
-            formData.delete("oauth_scopes");
-            formData.delete("oauth_authorization_url");
-            formData.delete("oauth_redirect_uri");
-            formData.delete("oauth_store_tokens");
-            formData.delete("oauth_auto_refresh");
-
-            formData.append("oauth_config", JSON.stringify(oauthConfig));
+        if (authType !== "oauth") {
+            formData.set("oauth_grant_type", "");
         }
 
-        const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/gateways`,
-            {
-                method: "POST",
-                body: formData,
-            },
+        formData.append("visibility", formData.get("visibility"));
+
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
         );
+        teamId && formData.append("team_id", teamId);
+
+        const response = await fetch(`${window.ROOT_PATH}/admin/gateways`, {
+            method: "POST",
+            body: formData,
+        });
         const result = await response.json();
 
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to add gateway");
         } else {
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#gateways`
-                : `${window.ROOT_PATH}/admin#gateways`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#gateways`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -5904,21 +9491,32 @@ async function handleResourceFormSubmit(e) {
 
         const isInactiveCheckedBool = isInactiveChecked("resources");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
-
-        const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/resources`,
-            {
-                method: "POST",
-                body: formData,
-            },
+        formData.append("visibility", formData.get("visibility"));
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
         );
+        teamId && formData.append("team_id", teamId);
+        const response = await fetch(`${window.ROOT_PATH}/admin/resources`, {
+            method: "POST",
+            body: formData,
+        });
         const result = await response.json();
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to add Resource");
         } else {
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#resources`
-                : `${window.ROOT_PATH}/admin#resources`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#resources`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -5962,22 +9560,29 @@ async function handlePromptFormSubmit(e) {
 
         const isInactiveCheckedBool = isInactiveChecked("prompts");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
-
-        const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/prompts`,
-            {
-                method: "POST",
-                body: formData,
-            },
+        formData.append("visibility", formData.get("visibility"));
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
         );
+        teamId && formData.append("team_id", teamId);
+        const response = await fetch(`${window.ROOT_PATH}/admin/prompts`, {
+            method: "POST",
+            body: formData,
+        });
         const result = await response.json();
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to add prompt");
         }
-        // Only redirect on success
-        const redirectUrl = isInactiveCheckedBool
-            ? `${window.ROOT_PATH}/admin?include_inactive=true#prompts`
-            : `${window.ROOT_PATH}/admin#prompts`;
+
+        const searchParams = new URLSearchParams();
+        if (isInactiveCheckedBool) {
+            searchParams.set("include_inactive", "true");
+        }
+        if (teamId) {
+            searchParams.set("team_id", teamId);
+        }
+        const queryString = searchParams.toString();
+        const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#prompts`;
         window.location.href = redirectUrl;
     } catch (error) {
         console.error("Error:", error);
@@ -5997,7 +9602,13 @@ async function handlePromptFormSubmit(e) {
 async function handleEditPromptFormSubmit(e) {
     e.preventDefault();
     const form = e.target;
+
     const formData = new FormData(form);
+    // Add team_id from URL if present (like handleEditToolFormSubmit)
+    const teamId = new URL(window.location.href).searchParams.get("team_id");
+    if (teamId) {
+        formData.set("team_id", teamId);
+    }
 
     try {
         // Validate inputs
@@ -6030,9 +9641,19 @@ async function handleEditPromptFormSubmit(e) {
             throw new Error(result?.message || "Failed to edit Prompt");
         }
         // Only redirect on success
-        const redirectUrl = isInactiveCheckedBool
-            ? `${window.ROOT_PATH}/admin?include_inactive=true#prompts`
-            : `${window.ROOT_PATH}/admin#prompts`;
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        const searchParams = new URLSearchParams();
+        if (isInactiveCheckedBool) {
+            searchParams.set("include_inactive", "true");
+        }
+        if (teamId) {
+            searchParams.set("team_id", teamId);
+        }
+        const queryString = searchParams.toString();
+        const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#prompts`;
         window.location.href = redirectUrl;
     } catch (error) {
         console.error("Error:", error);
@@ -6069,22 +9690,35 @@ async function handleServerFormSubmit(e) {
         const isInactiveCheckedBool = isInactiveChecked("servers");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
 
-        const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/servers`,
-            {
-                method: "POST",
-                body: formData,
-                redirect: "manual",
-            },
+        formData.append("visibility", formData.get("visibility"));
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
         );
+        teamId && formData.append("team_id", teamId);
+
+        const response = await fetch(`${window.ROOT_PATH}/admin/servers`, {
+            method: "POST",
+            body: formData,
+        });
         const result = await response.json();
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to add server.");
         } else {
             // Success redirect
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#catalog`
-                : `${window.ROOT_PATH}/admin#catalog`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#catalog`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -6094,6 +9728,132 @@ async function handleServerFormSubmit(e) {
             status.classList.add("error-status");
         }
         showErrorMessage(error.message); // Optional if you use global popup/snackbar
+    } finally {
+        if (loading) {
+            loading.style.display = "none";
+        }
+    }
+}
+
+// Handle Add A2A Form Submit
+async function handleA2AFormSubmit(e) {
+    e.preventDefault();
+
+    const form = e.target;
+    const formData = new FormData(form);
+    const status = safeGetElement("a2aFormError");
+    const loading = safeGetElement("add-a2a-loading");
+
+    try {
+        // Basic validation
+        const name = formData.get("name");
+        const nameValidation = validateInputName(name, "A2A Agent");
+        if (!nameValidation.valid) {
+            throw new Error(nameValidation.error);
+        }
+
+        if (loading) {
+            loading.style.display = "block";
+        }
+        if (status) {
+            status.textContent = "";
+            status.classList.remove("error-status");
+        }
+
+        const isInactiveCheckedBool = isInactiveChecked("a2a-agents");
+        formData.append("is_inactive_checked", isInactiveCheckedBool);
+        // Process passthrough headers - convert comma-separated string to array
+        const passthroughHeadersString = formData.get("passthrough_headers");
+        if (passthroughHeadersString && passthroughHeadersString.trim()) {
+            // Split by comma and clean up each header name
+            const passthroughHeaders = passthroughHeadersString
+                .split(",")
+                .map((header) => header.trim())
+                .filter((header) => header.length > 0);
+
+            // Validate each header name
+            for (const headerName of passthroughHeaders) {
+                if (!HEADER_NAME_REGEX.test(headerName)) {
+                    showErrorMessage(
+                        `Invalid passthrough header name: "${headerName}". Only letters, numbers, and hyphens are allowed.`,
+                    );
+                    return;
+                }
+            }
+
+            // Remove the original string and add as JSON array
+            formData.delete("passthrough_headers");
+            formData.append(
+                "passthrough_headers",
+                JSON.stringify(passthroughHeaders),
+            );
+        }
+
+        // Handle auth_headers JSON field
+        const authHeadersJson = formData.get("auth_headers");
+        if (authHeadersJson) {
+            try {
+                const authHeaders = JSON.parse(authHeadersJson);
+                if (Array.isArray(authHeaders) && authHeaders.length > 0) {
+                    // Remove the JSON string and add as parsed data for backend processing
+                    formData.delete("auth_headers");
+                    formData.append(
+                        "auth_headers",
+                        JSON.stringify(authHeaders),
+                    );
+                }
+            } catch (e) {
+                console.error("Invalid auth_headers JSON:", e);
+            }
+        }
+
+        const authType = formData.get("auth_type");
+        if (authType !== "oauth") {
+            formData.set("oauth_grant_type", "");
+        }
+
+        // ✅ Ensure visibility is captured from checked radio button
+        // formData.set("visibility", visibility);
+        formData.append("visibility", formData.get("visibility"));
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+        teamId && formData.append("team_id", teamId);
+
+        // Submit to backend
+        // specifically log agentType only
+        console.log("agentType:", formData.get("agentType"));
+
+        const response = await fetch(`${window.ROOT_PATH}/admin/a2a`, {
+            method: "POST",
+            body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!result || !result.success) {
+            throw new Error(result?.message || "Failed to add A2A Agent.");
+        } else {
+            // Success redirect
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#a2a-agents`;
+            window.location.href = redirectUrl;
+        }
+    } catch (error) {
+        console.error("Add A2A Agent Error:", error);
+        if (status) {
+            status.textContent = error.message || "An error occurred.";
+            status.classList.add("error-status");
+        }
+        showErrorMessage(error.message); // global popup/snackbar if available
     } finally {
         if (loading) {
             loading.style.display = "none";
@@ -6148,24 +9908,40 @@ async function handleToolFormSubmit(event) {
         if (window.schemaEditor) {
             window.schemaEditor.save();
         }
+        if (window.outputSchemaEditor) {
+            window.outputSchemaEditor.save();
+        }
 
         const isInactiveCheckedBool = isInactiveChecked("tools");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
 
-        const response = await fetchWithTimeout(
-            `${window.ROOT_PATH}/admin/tools`,
-            {
-                method: "POST",
-                body: formData,
-            },
+        formData.append("visibility", formData.get("visibility"));
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
         );
+        teamId && formData.append("team_id", teamId);
+
+        const response = await fetch(`${window.ROOT_PATH}/admin/tools`, {
+            method: "POST",
+            body: formData,
+        });
         const result = await response.json();
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to add tool");
         } else {
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#tools`
-                : `${window.ROOT_PATH}/admin#tools`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#tools`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -6202,6 +9978,9 @@ async function handleEditToolFormSubmit(event) {
         if (window.editToolSchemaEditor) {
             window.editToolSchemaEditor.save();
         }
+        if (window.editToolOutputSchemaEditor) {
+            window.editToolOutputSchemaEditor.save();
+        }
 
         const isInactiveCheckedBool = isInactiveChecked("tools");
         formData.append("is_inactive_checked", isInactiveCheckedBool);
@@ -6217,9 +9996,19 @@ async function handleEditToolFormSubmit(event) {
         if (!result || !result.success) {
             throw new Error(result?.message || "Failed to edit tool");
         } else {
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#tools`
-                : `${window.ROOT_PATH}/admin#tools`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#tools`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -6227,6 +10016,8 @@ async function handleEditToolFormSubmit(event) {
         showErrorMessage(error.message);
     }
 }
+
+// Handle Gateway Edit Form
 async function handleEditGatewayFormSubmit(e) {
     e.preventDefault();
     const form = e.target;
@@ -6271,39 +10062,18 @@ async function handleEditGatewayFormSubmit(e) {
         );
 
         // Handle OAuth configuration
+        // NOTE: OAuth config assembly is now handled by the backend (mcpgateway/admin.py)
+        // The backend assembles individual form fields into oauth_config with proper field names
+        // and supports DCR (Dynamic Client Registration) when client_id/client_secret are empty
+        //
+        // Leaving this commented for reference:
+        // const authType = formData.get("auth_type");
+        // if (authType === "oauth") {
+        //     ... backend handles this now ...
+        // }
         const authType = formData.get("auth_type");
-        if (authType === "oauth") {
-            const oauthConfig = {
-                grant_type: formData.get("oauth_grant_type"),
-                client_id: formData.get("oauth_client_id"),
-                client_secret: formData.get("oauth_client_secret"),
-                token_url: formData.get("oauth_token_url"),
-                scopes: formData.get("oauth_scopes")
-                    ? formData
-                          .get("oauth_scopes")
-                          .split(" ")
-                          .filter((s) => s.trim())
-                    : [],
-            };
-
-            // Add authorization code specific fields
-            if (oauthConfig.grant_type === "authorization_code") {
-                oauthConfig.authorization_url = formData.get(
-                    "oauth_authorization_url",
-                );
-                oauthConfig.redirect_uri = formData.get("oauth_redirect_uri");
-            }
-
-            // Remove individual OAuth fields and add as oauth_config
-            formData.delete("oauth_grant_type");
-            formData.delete("oauth_client_id");
-            formData.delete("oauth_client_secret");
-            formData.delete("oauth_token_url");
-            formData.delete("oauth_scopes");
-            formData.delete("oauth_authorization_url");
-            formData.delete("oauth_redirect_uri");
-
-            formData.append("oauth_config", JSON.stringify(oauthConfig));
+        if (authType !== "oauth") {
+            formData.set("oauth_grant_type", "");
         }
 
         const isInactiveCheckedBool = isInactiveChecked("gateways");
@@ -6318,9 +10088,117 @@ async function handleEditGatewayFormSubmit(e) {
             throw new Error(result?.message || "Failed to edit gateway");
         }
         // Only redirect on success
-        const redirectUrl = isInactiveCheckedBool
-            ? `${window.ROOT_PATH}/admin?include_inactive=true#gateways`
-            : `${window.ROOT_PATH}/admin#gateways`;
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        const searchParams = new URLSearchParams();
+        if (isInactiveCheckedBool) {
+            searchParams.set("include_inactive", "true");
+        }
+        if (teamId) {
+            searchParams.set("team_id", teamId);
+        }
+        const queryString = searchParams.toString();
+        const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#gateways`;
+        window.location.href = redirectUrl;
+    } catch (error) {
+        console.error("Error:", error);
+        showErrorMessage(error.message);
+    }
+}
+
+// Handle A2A Agent Edit Form
+async function handleEditA2AAgentFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    console.log("Edit A2A Agent Form Details: ");
+    console.log(
+        JSON.stringify(Object.fromEntries(formData.entries()), null, 2),
+    );
+
+    try {
+        // Validate form inputs
+        const name = formData.get("name");
+        const url = formData.get("endpoint_url");
+        console.log("Original A2A URL: ", url);
+        const nameValidation = validateInputName(name, "a2a_agent");
+        const urlValidation = validateUrl(url);
+
+        if (!nameValidation.valid) {
+            throw new Error(nameValidation.error);
+        }
+
+        if (!urlValidation.valid) {
+            throw new Error(urlValidation.error);
+        }
+
+        // Handle passthrough headers
+        const passthroughHeadersString =
+            formData.get("passthrough_headers") || "";
+        const passthroughHeaders = passthroughHeadersString
+            .split(",")
+            .map((header) => header.trim())
+            .filter((header) => header.length > 0);
+
+        // Validate each header name
+        for (const headerName of passthroughHeaders) {
+            if (headerName && !HEADER_NAME_REGEX.test(headerName)) {
+                showErrorMessage(
+                    `Invalid passthrough header name: "${headerName}". Only letters, numbers, and hyphens are allowed.`,
+                );
+                return;
+            }
+        }
+
+        formData.append(
+            "passthrough_headers",
+            JSON.stringify(passthroughHeaders),
+        );
+
+        // Handle OAuth configuration
+        // NOTE: OAuth config assembly is now handled by the backend (mcpgateway/admin.py)
+        // The backend assembles individual form fields into oauth_config with proper field names
+        // and supports DCR (Dynamic Client Registration) when client_id/client_secret are empty
+        //
+        // Leaving this commented for reference:
+        // const authType = formData.get("auth_type");
+        // if (authType === "oauth") {
+        //     ... backend handles this now ...
+        // }
+
+        const authType = formData.get("auth_type");
+        if (authType !== "oauth") {
+            formData.set("oauth_grant_type", "");
+        }
+
+        const isInactiveCheckedBool = isInactiveChecked("a2a-agents");
+        formData.append("is_inactive_checked", isInactiveCheckedBool);
+        // Submit via fetch
+        const response = await fetch(form.action, {
+            method: "POST",
+            body: formData,
+        });
+        const result = await response.json();
+        if (!result || !result.success) {
+            throw new Error(result?.message || "Failed to edit a2a agent");
+        }
+        // Only redirect on success
+        const teamId = new URL(window.location.href).searchParams.get(
+            "team_id",
+        );
+
+        const searchParams = new URLSearchParams();
+        if (isInactiveCheckedBool) {
+            searchParams.set("include_inactive", "true");
+        }
+        if (teamId) {
+            searchParams.set("team_id", teamId);
+        }
+        const queryString = searchParams.toString();
+        const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#a2a-agents`;
         window.location.href = redirectUrl;
     } catch (error) {
         console.error("Error:", error);
@@ -6364,9 +10242,19 @@ async function handleEditServerFormSubmit(e) {
         // Only redirect on success
         else {
             // Redirect to the appropriate page based on inactivity checkbox
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#catalog`
-                : `${window.ROOT_PATH}/admin#catalog`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#catalog`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -6420,9 +10308,19 @@ async function handleEditResFormSubmit(e) {
         // Only redirect on success
         else {
             // Redirect to the appropriate page based on inactivity checkbox
-            const redirectUrl = isInactiveCheckedBool
-                ? `${window.ROOT_PATH}/admin?include_inactive=true#resources`
-                : `${window.ROOT_PATH}/admin#resources`;
+            const teamId = new URL(window.location.href).searchParams.get(
+                "team_id",
+            );
+
+            const searchParams = new URLSearchParams();
+            if (isInactiveCheckedBool) {
+                searchParams.set("include_inactive", "true");
+            }
+            if (teamId) {
+                searchParams.set("team_id", teamId);
+            }
+            const queryString = searchParams.toString();
+            const redirectUrl = `${window.ROOT_PATH}/admin${queryString ? `?${queryString}` : ""}#resources`;
             window.location.href = redirectUrl;
         }
     } catch (error) {
@@ -6791,6 +10689,16 @@ function initializeCodeMirrorEditors() {
             varName: "editToolSchemaEditor",
         },
         {
+            id: "output-schema-editor",
+            mode: "application/json",
+            varName: "outputSchemaEditor",
+        },
+        {
+            id: "edit-tool-output-schema",
+            mode: "application/json",
+            varName: "editToolOutputSchemaEditor",
+        },
+        {
             id: "edit-resource-content",
             mode: "text/plain",
             varName: "editResourceContentEditor",
@@ -6838,6 +10746,7 @@ function initializeCodeMirrorEditors() {
 function initializeToolSelects() {
     console.log("Initializing tool selects...");
 
+    // Add Server form
     initToolSelect(
         "associatedTools",
         "selectedToolsPills",
@@ -6846,6 +10755,26 @@ function initializeToolSelects() {
         "selectAllToolsBtn",
         "clearAllToolsBtn",
     );
+
+    initResourceSelect(
+        "associatedResources",
+        "selectedResourcesPills",
+        "selectedResourcesWarning",
+        10,
+        "selectAllResourcesBtn",
+        "clearAllResourcesBtn",
+    );
+
+    initPromptSelect(
+        "associatedPrompts",
+        "selectedPromptsPills",
+        "selectedPromptsWarning",
+        8,
+        "selectAllPromptsBtn",
+        "clearAllPromptsBtn",
+    );
+
+    // Edit Server form
     initToolSelect(
         "edit-server-tools",
         "selectedEditToolsPills",
@@ -6854,17 +10783,39 @@ function initializeToolSelects() {
         "selectAllEditToolsBtn",
         "clearAllEditToolsBtn",
     );
+
+    // Initialize resource selector
+    initResourceSelect(
+        "edit-server-resources",
+        "selectedEditResourcesPills",
+        "selectedEditResourcesWarning",
+        10,
+        "selectAllEditResourcesBtn",
+        "clearAllEditResourcesBtn",
+    );
+
+    // Initialize prompt selector
+    initPromptSelect(
+        "edit-server-prompts",
+        "selectedEditPromptsPills",
+        "selectedEditPromptsWarning",
+        8,
+        "selectAllEditPromptsBtn",
+        "clearAllEditPromptsBtn",
+    );
 }
 
 function initializeEventListeners() {
-    console.log("Setting up event listeners...");
+    console.log("🎯 Setting up event listeners...");
 
     setupTabNavigation();
     setupHTMXHooks();
+    console.log("✅ HTMX hooks registered");
     setupAuthenticationToggles();
     setupFormHandlers();
     setupSchemaModeHandlers();
     setupIntegrationTypeHandlers();
+    console.log("✅ All event listeners initialized");
 }
 
 function setupTabNavigation() {
@@ -6877,13 +10828,24 @@ function setupTabNavigation() {
         "a2a-agents",
         "roots",
         "metrics",
+        "plugins",
         "logs",
         "export-import",
         "version-info",
     ];
 
     tabs.forEach((tabName) => {
-        const tabElement = safeGetElement(`tab-${tabName}`);
+        // Suppress warnings for optional tabs that might not be enabled
+        const optionalTabs = [
+            "roots",
+            "logs",
+            "export-import",
+            "version-info",
+            "plugins",
+        ];
+        const suppressWarning = optionalTabs.includes(tabName);
+
+        const tabElement = safeGetElement(`tab-${tabName}`, suppressWarning);
         if (tabElement) {
             tabElement.addEventListener("click", () => showTab(tabName));
         }
@@ -6912,12 +10874,27 @@ function setupAuthenticationToggles() {
             bearerId: "auth-bearer-fields",
             headersId: "auth-headers-fields",
         },
+
+        // Gateway Add Form auth fields
+
         {
             id: "auth-type-gw",
             basicId: "auth-basic-fields-gw",
             bearerId: "auth-bearer-fields-gw",
             headersId: "auth-headers-fields-gw",
         },
+
+        // A2A Add Form auth fields
+
+        {
+            id: "auth-type-a2a",
+            basicId: "auth-basic-fields-a2a",
+            bearerId: "auth-bearer-fields-a2a",
+            headersId: "auth-headers-fields-a2a",
+        },
+
+        // Gateway Edit Form auth fields
+
         {
             id: "auth-type-gw-edit",
             basicId: "auth-basic-fields-gw-edit",
@@ -6925,6 +10902,17 @@ function setupAuthenticationToggles() {
             headersId: "auth-headers-fields-gw-edit",
             oauthId: "auth-oauth-fields-gw-edit",
         },
+
+        // A2A Edit Form auth fields
+
+        {
+            id: "auth-type-a2a-edit",
+            basicId: "auth-basic-fields-a2a-edit",
+            bearerId: "auth-bearer-fields-a2a-edit",
+            headersId: "auth-headers-fields-a2a-edit",
+            oauthId: "auth-oauth-fields-a2a-edit",
+        },
+
         {
             id: "edit-auth-type",
             basicId: "edit-auth-basic-fields",
@@ -6962,8 +10950,29 @@ function setupFormHandlers() {
             authTypeField.addEventListener("change", handleAuthTypeChange);
         }
 
-        // Add OAuth grant type change handler
+        // Add OAuth grant type change handler for Gateway
         const oauthGrantTypeField = safeGetElement("oauth-grant-type-gw");
+        if (oauthGrantTypeField) {
+            oauthGrantTypeField.addEventListener(
+                "change",
+                handleOAuthGrantTypeChange,
+            );
+        }
+    }
+
+    // Add A2A Form
+    const a2aForm = safeGetElement("add-a2a-form");
+
+    if (a2aForm) {
+        a2aForm.addEventListener("submit", handleA2AFormSubmit);
+
+        // Add OAuth authentication type change handler
+        const authTypeField = safeGetElement("auth-type-a2a");
+        if (authTypeField) {
+            authTypeField.addEventListener("change", handleAuthTypeChange);
+        }
+
+        const oauthGrantTypeField = safeGetElement("oauth-grant-type-a2a");
         if (oauthGrantTypeField) {
             oauthGrantTypeField.addEventListener(
                 "change",
@@ -6993,6 +11002,8 @@ function setupFormHandlers() {
     }
 
     // Add OAuth grant type change handler for Edit Gateway modal
+    // Checkpoint commented
+    /*
     const editOAuthGrantTypeField = safeGetElement("oauth-grant-type-gw-edit");
     if (editOAuthGrantTypeField) {
         editOAuthGrantTypeField.addEventListener(
@@ -7000,6 +11011,17 @@ function setupFormHandlers() {
             handleEditOAuthGrantTypeChange,
         );
     }
+
+    */
+
+    // Checkpoint Started
+    ["oauth-grant-type-gw-edit", "oauth-grant-type-a2a-edit"].forEach((id) => {
+        const field = safeGetElement(id);
+        if (field) {
+            field.addEventListener("change", handleEditOAuthGrantTypeChange);
+        }
+    });
+    // Checkpoint Ended
 
     const toolForm = safeGetElement("add-tool-form");
     if (toolForm) {
@@ -7014,6 +11036,11 @@ function setupFormHandlers() {
     const paramButton = safeGetElement("add-parameter-btn");
     if (paramButton) {
         paramButton.addEventListener("click", handleAddParameter);
+    }
+
+    const passthroughButton = safeGetElement("add-passthrough-btn");
+    if (passthroughButton) {
+        passthroughButton.addEventListener("click", handleAddPassthrough);
     }
 
     const serverForm = safeGetElement("add-server-form");
@@ -7060,28 +11087,197 @@ function setupFormHandlers() {
             }
         });
     }
+
+    const editA2AAgentForm = safeGetElement("edit-a2a-agent-form");
+    if (editA2AAgentForm) {
+        editA2AAgentForm.addEventListener(
+            "submit",
+            handleEditA2AAgentFormSubmit,
+        );
+        editA2AAgentForm.addEventListener("click", () => {
+            if (getComputedStyle(editA2AAgentForm).display !== "none") {
+                refreshEditors();
+            }
+        });
+    }
+
+    // Setup search functionality for selectors
+    setupSelectorSearch();
 }
+
+/**
+ * Setup search functionality for multi-select dropdowns
+ */
+function setupSelectorSearch() {
+    // Tools search - server-side search
+    const searchTools = safeGetElement("searchTools", true);
+    if (searchTools) {
+        let searchTimeout;
+        searchTools.addEventListener("input", function () {
+            const searchTerm = this.value;
+
+            // Clear previous timeout
+            if (searchTimeout) {
+                clearTimeout(searchTimeout);
+            }
+
+            // Debounce search to avoid too many API calls
+            searchTimeout = setTimeout(() => {
+                serverSideToolSearch(searchTerm);
+            }, 300);
+        });
+    }
+
+    // Resources search
+    const searchResources = safeGetElement("searchResources", true);
+    if (searchResources) {
+        searchResources.addEventListener("input", function () {
+            filterSelectorItems(
+                this.value,
+                "#associatedResources",
+                ".resource-item",
+                "noResourcesMessage",
+                "searchResourcesQuery",
+            );
+        });
+    }
+
+    // Prompts search (server-side)
+    const searchPrompts = safeGetElement("searchPrompts", true);
+    if (searchPrompts) {
+        let promptSearchTimeout;
+        searchPrompts.addEventListener("input", function () {
+            const searchTerm = this.value;
+            if (promptSearchTimeout) {
+                clearTimeout(promptSearchTimeout);
+            }
+            promptSearchTimeout = setTimeout(() => {
+                serverSidePromptSearch(searchTerm);
+            }, 300);
+        });
+    }
+}
+
+/**
+ * Generic function to filter items in multi-select dropdowns with no results message
+ */
+function filterSelectorItems(
+    searchText,
+    containerSelector,
+    itemSelector,
+    noResultsId,
+    searchQueryId,
+) {
+    const container = document.querySelector(containerSelector);
+    if (!container) {
+        return;
+    }
+
+    const items = container.querySelectorAll(itemSelector);
+    const search = searchText.toLowerCase().trim();
+    let hasVisibleItems = false;
+
+    items.forEach((item) => {
+        let textContent = "";
+
+        // Get text from all text nodes within the item
+        const textElements = item.querySelectorAll(
+            "span, .text-xs, .font-medium",
+        );
+        textElements.forEach((el) => {
+            textContent += " " + el.textContent;
+        });
+
+        // Also get direct text content
+        textContent += " " + item.textContent;
+
+        if (search === "" || textContent.toLowerCase().includes(search)) {
+            item.style.display = "";
+            hasVisibleItems = true;
+        } else {
+            item.style.display = "none";
+        }
+    });
+
+    // Handle no results message
+    const noResultsMessage = safeGetElement(noResultsId, true);
+    const searchQuerySpan = safeGetElement(searchQueryId, true);
+
+    if (search !== "" && !hasVisibleItems) {
+        if (noResultsMessage) {
+            noResultsMessage.style.display = "block";
+        }
+        if (searchQuerySpan) {
+            searchQuerySpan.textContent = searchText;
+        }
+    } else {
+        if (noResultsMessage) {
+            noResultsMessage.style.display = "none";
+        }
+    }
+}
+
+/**
+ * Filter server table rows based on search text
+ */
+function filterServerTable(searchText) {
+    try {
+        const tbody = document.querySelector(
+            'tbody[data-testid="server-list"]',
+        );
+        if (!tbody) {
+            console.warn("Server table not found");
+            return;
+        }
+
+        const rows = tbody.querySelectorAll('tr[data-testid="server-item"]');
+        const search = searchText.toLowerCase().trim();
+
+        rows.forEach((row) => {
+            let textContent = "";
+
+            // Get text from all cells in the row
+            const cells = row.querySelectorAll("td");
+            cells.forEach((cell) => {
+                textContent += " " + cell.textContent;
+            });
+
+            if (search === "" || textContent.toLowerCase().includes(search)) {
+                row.style.display = "";
+            } else {
+                row.style.display = "none";
+            }
+        });
+    } catch (error) {
+        console.error("Error filtering server table:", error);
+    }
+}
+
+// Make server search function available globally
+window.filterServerTable = filterServerTable;
 
 function handleAuthTypeChange() {
     const authType = this.value;
-    const basicFields = safeGetElement("auth-basic-fields-gw");
-    const bearerFields = safeGetElement("auth-bearer-fields-gw");
-    const headersFields = safeGetElement("auth-headers-fields-gw");
-    const oauthFields = safeGetElement("auth-oauth-fields-gw");
+
+    // Detect form type based on the element ID
+    // e.g., "auth-type-a2a" or "auth-type-gw"
+    const isA2A = this.id.includes("a2a");
+    const prefix = isA2A ? "a2a" : "gw";
+
+    // Select the correct field groups dynamically
+    const basicFields = safeGetElement(`auth-basic-fields-${prefix}`);
+    const bearerFields = safeGetElement(`auth-bearer-fields-${prefix}`);
+    const headersFields = safeGetElement(`auth-headers-fields-${prefix}`);
+    const oauthFields = safeGetElement(`auth-oauth-fields-${prefix}`);
 
     // Hide all auth sections first
-    if (basicFields) {
-        basicFields.style.display = "none";
-    }
-    if (bearerFields) {
-        bearerFields.style.display = "none";
-    }
-    if (headersFields) {
-        headersFields.style.display = "none";
-    }
-    if (oauthFields) {
-        oauthFields.style.display = "none";
-    }
+    [basicFields, bearerFields, headersFields, oauthFields].forEach(
+        (section) => {
+            if (section) {
+                section.style.display = "none";
+            }
+        },
+    );
 
     // Show the appropriate section
     switch (authType) {
@@ -7106,71 +11302,134 @@ function handleAuthTypeChange() {
             }
             break;
         default:
-            // No auth - keep everything hidden
+            // "none" or unknown type — keep everything hidden
             break;
     }
 }
 
 function handleOAuthGrantTypeChange() {
     const grantType = this.value;
-    const authCodeFields = safeGetElement("oauth-auth-code-fields-gw");
 
+    // Detect form type (a2a or gw) from the triggering element ID
+    const isA2A = this.id.includes("a2a");
+    const prefix = isA2A ? "a2a" : "gw";
+
+    // Select the correct fields dynamically based on prefix
+    const authCodeFields = safeGetElement(`oauth-auth-code-fields-${prefix}`);
+    const usernameField = safeGetElement(`oauth-username-field-${prefix}`);
+    const passwordField = safeGetElement(`oauth-password-field-${prefix}`);
+
+    // Handle Authorization Code flow
     if (authCodeFields) {
         if (grantType === "authorization_code") {
             authCodeFields.style.display = "block";
 
-            // Make authorization code specific fields required
+            // Make URL fields required
             const requiredFields =
                 authCodeFields.querySelectorAll('input[type="url"]');
-            requiredFields.forEach((field) => {
-                field.required = true;
-            });
+            requiredFields.forEach((field) => (field.required = true));
 
-            // Show additional validation for required fields
             console.log(
-                "Authorization Code flow selected - additional fields are now required",
+                `(${prefix.toUpperCase()}) Authorization Code flow selected - fields are now required`,
             );
         } else {
             authCodeFields.style.display = "none";
 
-            // Remove required validation for hidden fields
+            // Remove required validation
             const requiredFields =
                 authCodeFields.querySelectorAll('input[type="url"]');
-            requiredFields.forEach((field) => {
-                field.required = false;
-            });
+            requiredFields.forEach((field) => (field.required = false));
+        }
+    }
+
+    // Handle Password Grant flow
+    if (usernameField && passwordField) {
+        const usernameInput = safeGetElement(`oauth-username-${prefix}`);
+        const passwordInput = safeGetElement(`oauth-password-${prefix}`);
+
+        if (grantType === "password") {
+            usernameField.style.display = "block";
+            passwordField.style.display = "block";
+
+            if (usernameInput) {
+                usernameInput.required = true;
+            }
+            if (passwordInput) {
+                passwordInput.required = true;
+            }
+
+            console.log(
+                `(${prefix.toUpperCase()}) Password grant flow selected - username and password are now required`,
+            );
+        } else {
+            usernameField.style.display = "none";
+            passwordField.style.display = "none";
+
+            if (usernameInput) {
+                usernameInput.required = false;
+            }
+            if (passwordInput) {
+                passwordInput.required = false;
+            }
         }
     }
 }
 
 function handleEditOAuthGrantTypeChange() {
     const grantType = this.value;
-    const authCodeFields = safeGetElement("oauth-auth-code-fields-gw-edit");
 
+    // Detect prefix dynamically (supports both gw-edit and a2a-edit)
+    const id = this.id || "";
+    const prefix = id.includes("a2a") ? "a2a-edit" : "gw-edit";
+
+    const authCodeFields = safeGetElement(`oauth-auth-code-fields-${prefix}`);
+    const usernameField = safeGetElement(`oauth-username-field-${prefix}`);
+    const passwordField = safeGetElement(`oauth-password-field-${prefix}`);
+
+    // === Handle Authorization Code grant ===
     if (authCodeFields) {
+        const urlInputs = authCodeFields.querySelectorAll('input[type="url"]');
         if (grantType === "authorization_code") {
             authCodeFields.style.display = "block";
-
-            // Make authorization code specific fields required
-            const requiredFields =
-                authCodeFields.querySelectorAll('input[type="url"]');
-            requiredFields.forEach((field) => {
-                field.required = true;
-            });
-
-            // Show additional validation for required fields
+            urlInputs.forEach((field) => (field.required = true));
             console.log(
-                "Authorization Code flow selected - additional fields are now required",
+                `Authorization Code flow selected (${prefix}) - additional fields are now required`,
             );
         } else {
             authCodeFields.style.display = "none";
+            urlInputs.forEach((field) => (field.required = false));
+        }
+    }
 
-            // Remove required validation for hidden fields
-            const requiredFields =
-                authCodeFields.querySelectorAll('input[type="url"]');
-            requiredFields.forEach((field) => {
-                field.required = false;
-            });
+    // === Handle Password grant ===
+    if (usernameField && passwordField) {
+        const usernameInput = safeGetElement(`oauth-username-${prefix}`);
+        const passwordInput = safeGetElement(`oauth-password-${prefix}`);
+
+        if (grantType === "password") {
+            usernameField.style.display = "block";
+            passwordField.style.display = "block";
+
+            if (usernameInput) {
+                usernameInput.required = true;
+            }
+            if (passwordInput) {
+                passwordInput.required = true;
+            }
+
+            console.log(
+                `Password grant flow selected (${prefix}) - username and password are now required`,
+            );
+        } else {
+            usernameField.style.display = "none";
+            passwordField.style.display = "none";
+
+            if (usernameInput) {
+                usernameInput.required = false;
+            }
+            if (passwordInput) {
+                passwordInput.required = false;
+            }
         }
     }
 }
@@ -7310,7 +11569,11 @@ window.viewGateway = viewGateway;
 window.editGateway = editGateway;
 window.viewServer = viewServer;
 window.editServer = editServer;
+window.viewAgent = viewAgent;
+window.editA2AAgent = editA2AAgent;
 window.runToolTest = runToolTest;
+window.testPrompt = testPrompt;
+window.runPromptTest = runPromptTest;
 window.closeModal = closeModal;
 window.testGateway = testGateway;
 
@@ -7341,6 +11604,24 @@ function showConfigSelectionModal(serverId, serverName) {
     }
 
     openModal("config-selection-modal");
+}
+/**
+ * Build MCP_SERVER_CATALOG_URL for a given server
+ * @param {Object} server
+ * @returns {string}
+ */
+function getCatalogUrl(server) {
+    const currentHost = window.location.hostname;
+    const currentPort =
+        window.location.port ||
+        (window.location.protocol === "https:" ? "443" : "80");
+    const protocol = window.location.protocol;
+
+    const baseUrl = `${protocol}//${currentHost}${
+        currentPort !== "80" && currentPort !== "443" ? ":" + currentPort : ""
+    }`;
+
+    return `${baseUrl}/servers/${server.id}`;
 }
 
 /**
@@ -7451,8 +11732,8 @@ function generateConfig(server, configType) {
                         command: "python",
                         args: ["-m", "mcpgateway.wrapper"],
                         env: {
-                            MCP_AUTH_TOKEN: "your-token-here",
-                            MCP_SERVER_CATALOG_URLS: `${baseUrl}/servers/${server.id}`,
+                            MCP_AUTH: "Bearer <your-token-here>",
+                            MCP_SERVER_URL: `${baseUrl}/servers/${server.id}`,
                             MCP_TOOL_CALL_TIMEOUT: "120",
                         },
                     },
@@ -7761,6 +12042,7 @@ function filterEntitiesByTags(entityType, tagsInput) {
         .split(",")
         .map((tag) => tag.trim().toLowerCase())
         .filter((tag) => tag);
+
     const tableSelector = `#${entityType}-panel tbody tr`;
     const rows = document.querySelectorAll(tableSelector);
 
@@ -7776,10 +12058,18 @@ function filterEntitiesByTags(entityType, tagsInput) {
 
         // Extract tags from this row using specific tag selectors (not status badges)
         const rowTags = new Set();
+
         const tagElements = row.querySelectorAll(`
+            /* Gateways */
+            span.inline-block.bg-blue-100.text-blue-800.text-xs.px-2.py-1.rounded-full,
+            /* A2A Agents */
+            span.inline-flex.items-center.px-2.py-1.rounded.text-xs.bg-gray-100.text-gray-700,
+            /* Prompts & Resources */
             span.inline-flex.items-center.px-2.py-0\\.5.rounded.text-xs.font-medium.bg-blue-100.text-blue-800,
-            span.inline-block.bg-blue-100.text-blue-800.text-xs.px-2.py-1.rounded-full
+            /* Gray tags for A2A agent metadata */
+            span.inline-flex.items-center.px-2\\.5.py-0\\.5.rounded-full.text-xs.font-medium.bg-gray-100.text-gray-700
         `);
+
         tagElements.forEach((tagEl) => {
             const tagText = tagEl.textContent.trim().toLowerCase();
             // Filter out any remaining non-tag content
@@ -7879,6 +12169,7 @@ function initializeTagFiltering() {
         "prompts",
         "servers",
         "gateways",
+        "a2a-agents",
     ];
 
     entityTypes.forEach((entityType) => {
@@ -7899,6 +12190,10 @@ function initializeTagFiltering() {
 // Initialize tag filtering when page loads
 document.addEventListener("DOMContentLoaded", function () {
     initializeTagFiltering();
+
+    if (typeof initializeTeamScopingMonitor === "function") {
+        initializeTeamScopingMonitor();
+    }
 });
 
 // Expose tag filtering functions to global scope
@@ -7911,6 +12206,50 @@ window.updateAvailableTags = updateAvailableTags;
 // ===================================================================
 
 /**
+ * Toggle masking for sensitive text inputs (passwords, tokens, headers)
+ * @param {HTMLElement|string} inputOrId - Target input element or its ID
+ * @param {HTMLElement} button - Button triggering the toggle
+ */
+function toggleInputMask(inputOrId, button) {
+    const input =
+        typeof inputOrId === "string"
+            ? document.getElementById(inputOrId)
+            : inputOrId;
+
+    if (!input || !button) {
+        return;
+    }
+
+    const revealing = input.type === "password";
+    if (revealing) {
+        input.type = "text";
+        if (input.dataset.isMasked === "true") {
+            input.value = input.dataset.realValue ?? "";
+        }
+    } else {
+        input.type = "password";
+        if (input.dataset.isMasked === "true") {
+            input.value = MASKED_AUTH_VALUE;
+        }
+    }
+
+    const label = input.getAttribute("data-sensitive-label") || "value";
+    button.textContent = revealing ? "Hide" : "Show";
+    button.setAttribute("aria-pressed", revealing ? "true" : "false");
+    button.setAttribute(
+        "aria-label",
+        `${revealing ? "Hide" : "Show"} ${label}`.trim(),
+    );
+
+    const container = input.closest('[id^="auth-headers-container"]');
+    if (container) {
+        updateAuthHeadersJSON(container.id);
+    }
+}
+
+window.toggleInputMask = toggleInputMask;
+
+/**
  * Global counter for unique header IDs
  */
 let headerCounter = 0;
@@ -7919,7 +12258,7 @@ let headerCounter = 0;
  * Add a new authentication header row to the specified container
  * @param {string} containerId - ID of the container to add the header row to
  */
-function addAuthHeader(containerId) {
+function addAuthHeader(containerId, options = {}) {
     const container = document.getElementById(containerId);
     if (!container) {
         console.error(`Container with ID ${containerId} not found`);
@@ -7927,10 +12266,14 @@ function addAuthHeader(containerId) {
     }
 
     const headerId = `auth-header-${++headerCounter}`;
+    const valueInputId = `${headerId}-value`;
 
     const headerRow = document.createElement("div");
     headerRow.className = "flex items-center space-x-2";
     headerRow.id = headerId;
+    if (options.existing) {
+        headerRow.dataset.existing = "true";
+    }
 
     headerRow.innerHTML = `
         <div class="flex-1">
@@ -7942,12 +12285,25 @@ function addAuthHeader(containerId) {
             />
         </div>
         <div class="flex-1">
-            <input
-                type="password"
-                placeholder="Header Value"
-                class="auth-header-value block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:placeholder-gray-300 dark:text-gray-300 text-sm"
-                oninput="updateAuthHeadersJSON('${containerId}')"
-            />
+            <div class="relative">
+                <input
+                    type="password"
+                    id="${valueInputId}"
+                    placeholder="Header Value"
+                    data-sensitive-label="header value"
+                    class="auth-header-value block w-full rounded-md border border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-900 dark:placeholder-gray-300 dark:text-gray-300 text-sm pr-16"
+                    oninput="updateAuthHeadersJSON('${containerId}')"
+                />
+                <button
+                    type="button"
+                    class="absolute inset-y-0 right-0 flex items-center px-2 text-xs font-medium text-indigo-600 hover:text-indigo-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:text-indigo-300"
+                    onclick="toggleInputMask('${valueInputId}', this)"
+                    aria-pressed="false"
+                    aria-label="Show header value"
+                >
+                    Show
+                </button>
+            </div>
         </div>
         <button
             type="button"
@@ -7962,11 +12318,31 @@ function addAuthHeader(containerId) {
     `;
 
     container.appendChild(headerRow);
+
+    const keyInput = headerRow.querySelector(".auth-header-key");
+    const valueInput = headerRow.querySelector(".auth-header-value");
+    if (keyInput) {
+        keyInput.value = options.key ?? "";
+    }
+    if (valueInput) {
+        if (options.isMasked) {
+            valueInput.value = MASKED_AUTH_VALUE;
+            valueInput.dataset.isMasked = "true";
+            valueInput.dataset.realValue = options.value ?? "";
+        } else {
+            valueInput.value = options.value ?? "";
+            if (valueInput.dataset) {
+                delete valueInput.dataset.isMasked;
+                delete valueInput.dataset.realValue;
+            }
+        }
+    }
+
     updateAuthHeadersJSON(containerId);
 
+    const shouldFocus = options.focus !== false;
     // Focus on the key input of the new header
-    const keyInput = headerRow.querySelector(".auth-header-key");
-    if (keyInput) {
+    if (shouldFocus && keyInput) {
         keyInput.focus();
     }
 }
@@ -8006,10 +12382,10 @@ function updateAuthHeadersJSON(containerId) {
 
         if (keyInput && valueInput) {
             const key = keyInput.value.trim();
-            const value = valueInput.value.trim();
+            const rawValue = valueInput.value;
 
             // Skip completely empty rows
-            if (!key && !value) {
+            if (!key && (!rawValue || !rawValue.trim())) {
                 return;
             }
 
@@ -8039,9 +12415,25 @@ function updateAuthHeadersJSON(containerId) {
             }
             seenKeys.add(key.toLowerCase());
 
+            if (valueInput.dataset.isMasked === "true") {
+                const storedValue = valueInput.dataset.realValue ?? "";
+                if (
+                    rawValue !== MASKED_AUTH_VALUE &&
+                    rawValue !== storedValue
+                ) {
+                    delete valueInput.dataset.isMasked;
+                    delete valueInput.dataset.realValue;
+                }
+            }
+
+            const finalValue =
+                valueInput.dataset.isMasked === "true"
+                    ? MASKED_AUTH_VALUE
+                    : rawValue.trim();
+
             headers.push({
                 key,
-                value, // Allow empty values
+                value: finalValue, // Allow empty values
             });
         }
     });
@@ -8052,10 +12444,14 @@ function updateAuthHeadersJSON(containerId) {
         jsonInput = document.getElementById("auth-headers-json");
     } else if (containerId === "auth-headers-container-gw") {
         jsonInput = document.getElementById("auth-headers-json-gw");
+    } else if (containerId === "auth-headers-container-a2a") {
+        jsonInput = document.getElementById("auth-headers-json-a2a");
     } else if (containerId === "edit-auth-headers-container") {
         jsonInput = document.getElementById("edit-auth-headers-json");
     } else if (containerId === "auth-headers-container-gw-edit") {
         jsonInput = document.getElementById("auth-headers-json-gw-edit");
+    } else if (containerId === "auth-headers-container-a2a-edit") {
+        jsonInput = document.getElementById("auth-headers-json-a2a-edit");
     }
 
     // Warn about duplicate keys in console
@@ -8082,33 +12478,57 @@ function updateAuthHeadersJSON(containerId) {
  * @param {string} containerId - ID of the container to populate
  * @param {Array} headers - Array of header objects with key and value properties
  */
-function loadAuthHeaders(containerId, headers) {
+function loadAuthHeaders(containerId, headers, options = {}) {
     const container = document.getElementById(containerId);
-    if (!container || !headers || !Array.isArray(headers)) {
+    if (!container) {
         return;
     }
 
-    // Clear existing headers
+    const jsonInput = (() => {
+        if (containerId === "auth-headers-container") {
+            return document.getElementById("auth-headers-json");
+        }
+        if (containerId === "auth-headers-container-gw") {
+            return document.getElementById("auth-headers-json-gw");
+        }
+        if (containerId === "auth-headers-container-a2a") {
+            return document.getElementById("auth-headers-json-a2a");
+        }
+        if (containerId === "edit-auth-headers-container") {
+            return document.getElementById("edit-auth-headers-json");
+        }
+        if (containerId === "auth-headers-container-gw-edit") {
+            return document.getElementById("auth-headers-json-gw-edit");
+        }
+        if (containerId === "auth-headers-container-a2a-edit") {
+            return document.getElementById("auth-headers-json-a2a-edit");
+        }
+        return null;
+    })();
+
     container.innerHTML = "";
 
-    // Add each header
-    headers.forEach((header) => {
-        if (header.key && header.value) {
-            addAuthHeader(containerId);
-            // Find the last added header row and populate it
-            const headerRows = container.querySelectorAll(
-                '[id^="auth-header-"]',
-            );
-            const lastRow = headerRows[headerRows.length - 1];
-            if (lastRow) {
-                const keyInput = lastRow.querySelector(".auth-header-key");
-                const valueInput = lastRow.querySelector(".auth-header-value");
-                if (keyInput && valueInput) {
-                    keyInput.value = header.key;
-                    valueInput.value = header.value;
-                }
-            }
+    if (!headers || !Array.isArray(headers) || headers.length === 0) {
+        if (jsonInput) {
+            jsonInput.value = "";
         }
+        return;
+    }
+
+    const shouldMaskValues = options.maskValues === true;
+
+    headers.forEach((header) => {
+        if (!header || !header.key) {
+            return;
+        }
+        const value = typeof header.value === "string" ? header.value : "";
+        addAuthHeader(containerId, {
+            key: header.key,
+            value,
+            existing: true,
+            isMasked: shouldMaskValues,
+            focus: false,
+        });
     });
 
     updateAuthHeadersJSON(containerId);
@@ -8138,9 +12558,10 @@ async function fetchToolsForGateway(gatewayId, gatewayName) {
         "inline-block bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm mr-2";
 
     try {
-        const response = await fetch(`/oauth/fetch-tools/${gatewayId}`, {
-            method: "POST",
-        });
+        const response = await fetch(
+            `${window.ROOT_PATH}/oauth/fetch-tools/${gatewayId}`,
+            { method: "POST" },
+        );
 
         const result = await response.json();
 
@@ -8150,10 +12571,11 @@ async function fetchToolsForGateway(gatewayId, gatewayName) {
             button.className =
                 "inline-block bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm mr-2";
 
-            // Show success message
-            showSuccessMessage(
-                `Successfully fetched ${result.tools_created} tools from ${gatewayName}`,
-            );
+            // Show success message - API returns {success: true, message: "..."}
+            const message =
+                result.message ||
+                `Successfully fetched tools from ${gatewayName}`;
+            showSuccessMessage(message);
 
             // Refresh the page to show the new tools
             setTimeout(() => {
@@ -8193,9 +12615,7 @@ function setupBulkImportModal() {
     const modal = safeGetElement(modalId, true);
 
     if (!openBtn || !modal) {
-        console.warn(
-            "Bulk Import modal wiring skipped (missing button or modal).",
-        );
+        // Bulk import feature not available - skip silently
         return;
     }
 
@@ -8489,12 +12909,15 @@ async function handleExportAll() {
             params.append("include_dependencies", "false");
         }
 
-        const response = await fetch(`/admin/export/configuration?${params}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bearer ${getCookie("jwt_token")}`,
+        const response = await fetch(
+            `${window.ROOT_PATH}/admin/export/configuration?${params}`,
+            {
+                method: "GET",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                },
             },
-        });
+        );
 
         if (!response.ok) {
             throw new Error(`Export failed: ${response.statusText}`);
@@ -8678,9 +13101,13 @@ function processImportFile(file) {
             // Store import data and enable buttons
             window.currentImportData = importData;
 
+            const previewBtn = document.getElementById("import-preview-btn");
             const validateBtn = document.getElementById("import-validate-btn");
             const executeBtn = document.getElementById("import-execute-btn");
 
+            if (previewBtn) {
+                previewBtn.disabled = false;
+            }
             if (validateBtn) {
                 validateBtn.disabled = false;
             }
@@ -8754,9 +13181,13 @@ function resetImportFile() {
         `;
     }
 
+    const previewBtn = document.getElementById("import-preview-btn");
     const validateBtn = document.getElementById("import-validate-btn");
     const executeBtn = document.getElementById("import-execute-btn");
 
+    if (previewBtn) {
+        previewBtn.disabled = true;
+    }
     if (validateBtn) {
         validateBtn.disabled = true;
     }
@@ -8768,6 +13199,51 @@ function resetImportFile() {
     const statusSection = document.getElementById("import-status-section");
     if (statusSection) {
         statusSection.classList.add("hidden");
+    }
+}
+
+/**
+ * Preview import file for selective import
+ */
+async function previewImport() {
+    console.log("🔍 Generating import preview...");
+
+    if (!window.currentImportData) {
+        showNotification("❌ Please select an import file first", "error");
+        return;
+    }
+
+    try {
+        showImportProgress(true);
+
+        const response = await fetch(
+            (window.ROOT_PATH || "") + "/admin/import/preview",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                },
+                body: JSON.stringify({ data: window.currentImportData }),
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(
+                errorData.detail || `Preview failed: ${response.statusText}`,
+            );
+        }
+
+        const result = await response.json();
+        displayImportPreview(result.preview);
+
+        showNotification("✅ Import preview generated successfully", "success");
+    } catch (error) {
+        console.error("Import preview error:", error);
+        showNotification(`❌ Preview failed: ${error.message}`, "error");
+    } finally {
+        showImportProgress(false);
     }
 }
 
@@ -8798,14 +13274,17 @@ async function handleImport(dryRun = false) {
             rekey_secret: rekeySecret,
         };
 
-        const response = await fetch("/admin/import/configuration", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${getCookie("jwt_token")}`,
+        const response = await fetch(
+            (window.ROOT_PATH || "") + "/admin/import/configuration",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                },
+                body: JSON.stringify(requestData),
             },
-            body: JSON.stringify(requestData),
-        });
+        );
 
         if (!response.ok) {
             const errorData = await response.json();
@@ -8931,9 +13410,13 @@ function displayImportMessages(errors, warnings, isDryRun) {
  */
 function showImportProgress(show) {
     // Disable/enable buttons during operation
+    const previewBtn = document.getElementById("import-preview-btn");
     const validateBtn = document.getElementById("import-validate-btn");
     const executeBtn = document.getElementById("import-execute-btn");
 
+    if (previewBtn) {
+        previewBtn.disabled = show;
+    }
     if (validateBtn) {
         validateBtn.disabled = show;
     }
@@ -8947,11 +13430,14 @@ function showImportProgress(show) {
  */
 async function loadRecentImports() {
     try {
-        const response = await fetch("/admin/import/status", {
-            headers: {
-                Authorization: `Bearer ${getCookie("jwt_token")}`,
+        const response = await fetch(
+            (window.ROOT_PATH || "") + "/admin/import/status",
+            {
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                },
             },
-        });
+        );
 
         if (response.ok) {
             const imports = await response.json();
@@ -9050,20 +13536,8 @@ async function testA2AAgent(agentId, agentName, endpointUrl) {
             '<div class="text-blue-600">🔄 Testing agent...</div>';
         testResult.classList.remove("hidden");
 
-        // Get auth token from cookie or local storage
-        let token = getCookie("jwt_token");
-
-        // Try alternative cookie names if primary not found
-        if (!token) {
-            token = getCookie("access_token") || getCookie("auth_token");
-        }
-
-        // Try to get from localStorage as fallback
-        if (!token) {
-            token =
-                localStorage.getItem("jwt_token") ||
-                localStorage.getItem("auth_token");
-        }
+        // Get auth token using the robust getAuthToken function
+        const token = await getAuthToken();
 
         // Debug logging
         console.log("Available cookies:", document.cookie);
@@ -9096,7 +13570,7 @@ async function testA2AAgent(agentId, agentName, endpointUrl) {
                 headers,
                 body: JSON.stringify(testPayload),
             },
-            10000, // 10 second timeout
+            window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000, // Use configurable timeout
         );
 
         if (!response.ok) {
@@ -9157,3 +13631,5044 @@ async function testA2AAgent(agentId, agentName, endpointUrl) {
 
 // Expose A2A test function to global scope
 window.testA2AAgent = testA2AAgent;
+
+/**
+ * Token Management Functions
+ */
+
+/**
+ * Load tokens list from API
+ */
+async function loadTokensList() {
+    const tokensList = safeGetElement("tokens-list");
+    if (!tokensList) {
+        return;
+    }
+
+    try {
+        tokensList.innerHTML =
+            '<p class="text-gray-500 dark:text-gray-400">Loading tokens...</p>';
+
+        const response = await fetchWithTimeout(`${window.ROOT_PATH}/tokens`, {
+            headers: {
+                Authorization: `Bearer ${await getAuthToken()}`,
+                "Content-Type": "application/json",
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to load tokens: (${response.status})`);
+        }
+
+        const data = await response.json();
+        displayTokensList(data.tokens);
+    } catch (error) {
+        console.error("Error loading tokens:", error);
+        tokensList.innerHTML =
+            '<div class="text-red-500">Error loading tokens: ' +
+            escapeHtml(error.message) +
+            "</div>";
+    }
+}
+
+/**
+ * Display tokens list in the UI
+ */
+function displayTokensList(tokens) {
+    const tokensList = safeGetElement("tokens-list");
+    if (!tokensList) {
+        return;
+    }
+
+    if (!tokens || tokens.length === 0) {
+        tokensList.innerHTML =
+            '<p class="text-gray-500 dark:text-gray-400">No tokens found. Create your first token above.</p>';
+        return;
+    }
+
+    let tokensHTML = "";
+    tokens.forEach((token) => {
+        const expiresText = token.expires_at
+            ? new Date(token.expires_at).toLocaleDateString()
+            : "Never";
+        const createdText = token.created_at
+            ? new Date(token.created_at).toLocaleDateString()
+            : "Never";
+        const lastUsedText = token.last_used
+            ? new Date(token.last_used).toLocaleDateString()
+            : "Never";
+        const statusBadge = token.is_active
+            ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">Active</span>'
+            : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100">Inactive</span>';
+
+        tokensHTML += `
+            <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 mb-4">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center space-x-2">
+                            <h4 class="text-lg font-medium text-gray-900 dark:text-white">${escapeHtml(token.name)}</h4>
+                            ${statusBadge}
+                        </div>
+                        ${token.description ? `<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">${escapeHtml(token.description)}</p>` : ""}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3 text-sm text-gray-500 dark:text-gray-400">
+                            <div>
+                                <span class="font-medium">Created:</span> ${createdText}
+                            </div>
+                            <div>
+                                <span class="font-medium">Expires:</span> ${expiresText}
+                            </div>
+                            <div>
+                                <span class="font-medium">Last Used:</span> ${lastUsedText}
+                            </div>
+                        </div>
+                        ${token.server_id ? `<div class="mt-2 text-sm"><span class="font-medium text-gray-700 dark:text-gray-300">Scoped to Server:</span> ${escapeHtml(token.server_id)}</div>` : ""}
+                        ${token.resource_scopes && token.resource_scopes.length > 0 ? `<div class="mt-1 text-sm"><span class="font-medium text-gray-700 dark:text-gray-300">Permissions:</span> ${token.resource_scopes.map((p) => escapeHtml(p)).join(", ")}</div>` : ""}
+                    </div>
+                    <div class="flex space-x-2 ml-4">
+                        <button
+                            onclick="viewTokenUsage('${token.id}')"
+                            class="px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 border border-blue-300 dark:border-blue-600 hover:border-blue-500 dark:hover:border-blue-400 rounded-md"
+                        >
+                            Usage Stats
+                        </button>
+                        <button
+                            onclick="revokeToken('${token.id}', '${escapeHtml(token.name)}')"
+                            class="px-3 py-1 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 border border-red-300 dark:border-red-600 hover:border-red-500 dark:hover:border-red-400 rounded-md"
+                        >
+                            Revoke
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    tokensList.innerHTML = tokensHTML;
+}
+
+/**
+ * Get the currently selected team ID from the team selector
+ */
+function getCurrentTeamId() {
+    // First, try to get from Alpine.js component (most reliable)
+    const teamSelector = document.querySelector('[x-data*="selectedTeam"]');
+    if (
+        teamSelector &&
+        teamSelector._x_dataStack &&
+        teamSelector._x_dataStack[0]
+    ) {
+        const alpineData = teamSelector._x_dataStack[0];
+        const selectedTeam = alpineData.selectedTeam;
+
+        // Return null if empty string or falsy (means "All Teams")
+        if (!selectedTeam || selectedTeam === "" || selectedTeam === "all") {
+            return null;
+        }
+
+        return selectedTeam;
+    }
+
+    // Fallback: check URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const teamId = urlParams.get("teamid");
+
+    if (!teamId || teamId === "" || teamId === "all") {
+        return null;
+    }
+
+    return teamId;
+}
+
+/**
+ * Get the currently selected team name from Alpine.js team selector
+ * @returns {string|null} Team name or null if not found
+ */
+function getCurrentTeamName() {
+    const currentTeamId = getCurrentTeamId();
+
+    if (!currentTeamId) {
+        return null;
+    }
+
+    // Method 1: Try from window.USERTEAMSDATA (most reliable)
+    if (window.USERTEAMSDATA && Array.isArray(window.USERTEAMSDATA)) {
+        const teamObj = window.USERTEAMSDATA.find(
+            (t) => t.id === currentTeamId,
+        );
+        if (teamObj) {
+            // Return the personal team name format if it's a personal team
+            return teamObj.ispersonal ? `${teamObj.name}` : teamObj.name;
+        }
+    }
+
+    // Method 2: Try from Alpine.js component
+    const teamSelector = document.querySelector('[x-data*="selectedTeam"]');
+    if (
+        teamSelector &&
+        teamSelector._x_dataStack &&
+        teamSelector._x_dataStack[0]
+    ) {
+        const alpineData = teamSelector._x_dataStack[0];
+
+        // Get the selected team name directly from Alpine
+        if (
+            alpineData.selectedTeamName &&
+            alpineData.selectedTeamName !== "All Teams"
+        ) {
+            return alpineData.selectedTeamName;
+        }
+
+        // Try to find in teams array
+        if (alpineData.teams && Array.isArray(alpineData.teams)) {
+            const selectedTeamObj = alpineData.teams.find(
+                (t) => t.id === currentTeamId,
+            );
+            if (selectedTeamObj) {
+                return selectedTeamObj.ispersonal
+                    ? `${selectedTeamObj.name}`
+                    : selectedTeamObj.name;
+            }
+        }
+    }
+
+    // Fallback: return the team ID if name not found
+    return currentTeamId;
+}
+
+/**
+ * Update the team scoping warning/info visibility based on team selection
+ */
+function updateTeamScopingWarning() {
+    const warningDiv = document.getElementById("team-scoping-warning");
+    const infoDiv = document.getElementById("team-scoping-info");
+    const teamNameSpan = document.getElementById("selected-team-name");
+
+    if (!warningDiv || !infoDiv) {
+        return;
+    }
+
+    const currentTeamId = getCurrentTeamId();
+
+    if (!currentTeamId) {
+        // Show warning when "All Teams" is selected
+        warningDiv.classList.remove("hidden");
+        infoDiv.classList.add("hidden");
+    } else {
+        // Hide warning and show info when a specific team is selected
+        warningDiv.classList.add("hidden");
+        infoDiv.classList.remove("hidden");
+
+        // Get team name to display
+        const teamName = getCurrentTeamName() || currentTeamId;
+        if (teamNameSpan) {
+            teamNameSpan.textContent = teamName;
+        }
+    }
+}
+
+/**
+ * Monitor team selection changes using Alpine.js watcher
+ */
+function initializeTeamScopingMonitor() {
+    // Use Alpine.js $watch to monitor team selection changes
+    document.addEventListener("alpine:init", () => {
+        const teamSelector = document.querySelector('[x-data*="selectedTeam"]');
+        if (teamSelector && window.Alpine) {
+            // The Alpine component will notify us of changes
+            const checkInterval = setInterval(() => {
+                updateTeamScopingWarning();
+            }, 500); // Check every 500ms
+
+            // Store interval ID for cleanup if needed
+            window._teamMonitorInterval = checkInterval;
+        }
+    });
+
+    // Also update when tokens tab is shown
+    document.addEventListener("DOMContentLoaded", () => {
+        const tokensTab = document.querySelector('a[href="#tokens"]');
+        if (tokensTab) {
+            tokensTab.addEventListener("click", () => {
+                setTimeout(updateTeamScopingWarning, 100);
+            });
+        }
+    });
+}
+
+/**
+ * Set up create token form handling
+ */
+function setupCreateTokenForm() {
+    const form = safeGetElement("create-token-form");
+    if (!form) {
+        return;
+    }
+
+    // Update team scoping warning/info display
+    updateTeamScopingWarning();
+
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        // User can create public-only tokens in that context
+        await createToken(form);
+    });
+}
+
+/**
+ * Create a new API token
+ */
+// Create a new API token
+async function createToken(form) {
+    const formData = new FormData(form);
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+
+    try {
+        submitButton.textContent = "Creating...";
+        submitButton.disabled = true;
+
+        // Get current team ID (null means "All Teams" = public-only token)
+        const currentTeamId = getCurrentTeamId();
+
+        // Build request payload
+        const payload = {
+            name: formData.get("name"),
+            description: formData.get("description") || null,
+            expires_in_days: formData.get("expires_in_days")
+                ? parseInt(formData.get("expires_in_days"))
+                : null,
+            tags: [],
+            team_id: currentTeamId || null, // null = public-only token
+        };
+
+        // Add scoping if provided
+        const scope = {};
+
+        if (formData.get("server_id")) {
+            scope.server_id = formData.get("server_id");
+        }
+
+        if (formData.get("ip_restrictions")) {
+            const ipRestrictions = formData.get("ip_restrictions").trim();
+            scope.ip_restrictions = ipRestrictions
+                ? ipRestrictions.split(",").map((ip) => ip.trim())
+                : [];
+        } else {
+            scope.ip_restrictions = [];
+        }
+
+        if (formData.get("permissions")) {
+            scope.permissions = formData
+                .get("permissions")
+                .split(",")
+                .map((p) => p.trim())
+                .filter((p) => p.length > 0);
+        } else {
+            scope.permissions = [];
+        }
+
+        scope.time_restrictions = {};
+        scope.usage_limits = {};
+        payload.scope = scope;
+
+        const response = await fetchWithTimeout(`${window.ROOT_PATH}/tokens`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${await getAuthToken()}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(
+                error.detail || `Failed to create token (${response.status})`,
+            );
+        }
+
+        const result = await response.json();
+        showTokenCreatedModal(result);
+        form.reset();
+        await loadTokensList();
+
+        // Show appropriate success message
+        const tokenType = currentTeamId ? "team-scoped" : "public-only";
+        showNotification(`${tokenType} token created successfully!`, "success");
+    } catch (error) {
+        console.error("Error creating token:", error);
+        showNotification(`Error creating token: ${error.message}`, "error");
+    } finally {
+        submitButton.textContent = originalText;
+        submitButton.disabled = false;
+    }
+}
+
+/**
+ * Show modal with new token (one-time display)
+ */
+function showTokenCreatedModal(tokenData) {
+    const modal = document.createElement("div");
+    modal.className =
+        "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50";
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-lg shadow-lg rounded-md bg-white dark:bg-gray-800">
+            <div class="mt-3">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Token Created Successfully</h3>
+                    <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="bg-yellow-50 dark:bg-yellow-900 border border-yellow-200 dark:border-yellow-700 rounded-md p-4 mb-4">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                                Important: Save your token now!
+                            </h3>
+                            <div class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                                This is the only time you will be able to see this token. Make sure to save it in a secure location.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Your API Token:
+                    </label>
+                    <div class="flex">
+                        <input
+                            type="text"
+                            value="${tokenData.access_token}"
+                            readonly
+                            class="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded-l-md bg-gray-50 dark:bg-gray-700 text-sm font-mono"
+                            id="new-token-value"
+                        />
+                        <button
+                            onclick="copyToClipboard('new-token-value')"
+                            class="px-3 py-2 bg-indigo-600 text-white text-sm rounded-r-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                </div>
+
+                <div class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    <strong>Token Name:</strong> ${escapeHtml(tokenData.token.name || "Unnamed Token")}<br/>
+                    <strong>Expires:</strong> ${tokenData.token.expires_at ? new Date(tokenData.token.expires_at).toLocaleDateString() : "Never"}
+                </div>
+
+                <div class="flex justify-end">
+                    <button
+                        onclick="this.closest('.fixed').remove()"
+                        class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                        I've Saved It
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Focus the token input for easy selection
+    const tokenInput = modal.querySelector("#new-token-value");
+    tokenInput.focus();
+    tokenInput.select();
+}
+
+/**
+ * Copy text to clipboard
+ */
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.select();
+        document.execCommand("copy");
+        showNotification("Token copied to clipboard", "success");
+    }
+}
+
+/**
+ * Revoke a token
+ */
+async function revokeToken(tokenId, tokenName) {
+    if (
+        !confirm(
+            `Are you sure you want to revoke the token "${tokenName}"? This action cannot be undone.`,
+        )
+    ) {
+        return;
+    }
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH}/tokens/${tokenId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    reason: "Revoked by user via admin interface",
+                }),
+            },
+        );
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(
+                error.detail || `Failed to revoke token: ${response.status}`,
+            );
+        }
+
+        showNotification("Token revoked successfully", "success");
+        await loadTokensList();
+    } catch (error) {
+        console.error("Error revoking token:", error);
+        showNotification(`Error revoking token: ${error.message}`, "error");
+    }
+}
+
+/**
+ * View token usage statistics
+ */
+async function viewTokenUsage(tokenId) {
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH}/tokens/${tokenId}/usage`,
+            {
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`Failed to load usage stats: ${response.status}`);
+        }
+
+        const stats = await response.json();
+        showUsageStatsModal(stats);
+    } catch (error) {
+        console.error("Error loading usage stats:", error);
+        showNotification(
+            `Error loading usage stats: ${error.message}`,
+            "error",
+        );
+    }
+}
+
+/**
+ * Show usage statistics modal
+ */
+function showUsageStatsModal(stats) {
+    const modal = document.createElement("div");
+    modal.className =
+        "fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50";
+    modal.innerHTML = `
+        <div class="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white dark:bg-gray-800">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Token Usage Statistics (Last ${stats.period_days} Days)</h3>
+                <button onclick="this.closest('.fixed').remove()" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-blue-50 dark:bg-blue-900 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-blue-600 dark:text-blue-300">${stats.total_requests}</div>
+                    <div class="text-sm text-blue-600 dark:text-blue-400">Total Requests</div>
+                </div>
+                <div class="bg-green-50 dark:bg-green-900 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-green-600 dark:text-green-300">${stats.successful_requests}</div>
+                    <div class="text-sm text-green-600 dark:text-green-400">Successful</div>
+                </div>
+                <div class="bg-red-50 dark:bg-red-900 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-red-600 dark:text-red-300">${stats.blocked_requests}</div>
+                    <div class="text-sm text-red-600 dark:text-red-400">Blocked</div>
+                </div>
+                <div class="bg-purple-50 dark:bg-purple-900 p-4 rounded-lg">
+                    <div class="text-2xl font-bold text-purple-600 dark:text-purple-300">${Math.round(stats.success_rate * 100)}%</div>
+                    <div class="text-sm text-purple-600 dark:text-purple-400">Success Rate</div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <h4 class="text-md font-medium text-gray-900 dark:text-white mb-2">Average Response Time</h4>
+                <div class="text-lg text-gray-700 dark:text-gray-300">${stats.average_response_time_ms}ms</div>
+            </div>
+
+            ${
+                stats.top_endpoints && stats.top_endpoints.length > 0
+                    ? `
+                <div class="mb-4">
+                    <h4 class="text-md font-medium text-gray-900 dark:text-white mb-2">Top Endpoints</h4>
+                    <div class="space-y-2">
+                        ${stats.top_endpoints
+                            .map(
+                                ([endpoint, count]) => `
+                            <div class="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                <span class="font-mono text-sm">${escapeHtml(endpoint)}</span>
+                                <span class="text-sm font-medium">${count} requests</span>
+                            </div>
+                        `,
+                            )
+                            .join("")}
+                    </div>
+                </div>
+            `
+                    : ""
+            }
+
+            <div class="flex justify-end">
+                <button
+                    onclick="this.closest('.fixed').remove()"
+                    class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                >
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+/**
+ * Get auth token from storage or user input
+ */
+async function getAuthToken() {
+    // Use the same authentication method as the rest of the admin interface
+    let token = getCookie("jwt_token");
+
+    // Try alternative cookie names if primary not found
+    if (!token) {
+        token = getCookie("token");
+    }
+
+    // Fallback to localStorage for compatibility
+    if (!token) {
+        token = localStorage.getItem("auth_token");
+    }
+    console.log("MY TOKEN GENERATED:", token);
+
+    return token || "";
+}
+
+// Expose token management functions to global scope
+window.loadTokensList = loadTokensList;
+window.setupCreateTokenForm = setupCreateTokenForm;
+window.createToken = createToken;
+window.revokeToken = revokeToken;
+window.viewTokenUsage = viewTokenUsage;
+window.copyToClipboard = copyToClipboard;
+
+// ===================================================================
+// USER MANAGEMENT FUNCTIONS
+// ===================================================================
+
+/**
+ * Show user edit modal and load edit form
+ */
+function showUserEditModal(userEmail) {
+    const modal = document.getElementById("user-edit-modal");
+    if (modal) {
+        modal.style.display = "block";
+        modal.classList.remove("hidden");
+    }
+}
+
+/**
+ * Hide user edit modal
+ */
+function hideUserEditModal() {
+    const modal = document.getElementById("user-edit-modal");
+    if (modal) {
+        modal.style.display = "none";
+        modal.classList.add("hidden");
+    }
+}
+
+/**
+ * Close modal when clicking outside of it
+ */
+document.addEventListener("DOMContentLoaded", function () {
+    const userModal = document.getElementById("user-edit-modal");
+    if (userModal) {
+        userModal.addEventListener("click", function (event) {
+            if (event.target === userModal) {
+                hideUserEditModal();
+            }
+        });
+    }
+
+    const teamModal = document.getElementById("team-edit-modal");
+    if (teamModal) {
+        teamModal.addEventListener("click", function (event) {
+            if (event.target === teamModal) {
+                hideTeamEditModal();
+            }
+        });
+    }
+
+    // Handle HTMX events to show/hide modal
+    document.body.addEventListener("htmx:afterRequest", function (event) {
+        if (
+            event.detail.pathInfo.requestPath.includes("/admin/users/") &&
+            event.detail.pathInfo.requestPath.includes("/edit")
+        ) {
+            showUserEditModal();
+        }
+    });
+});
+
+// Expose user modal functions to global scope
+window.showUserEditModal = showUserEditModal;
+window.hideUserEditModal = hideUserEditModal;
+
+// Team edit modal functions
+async function showTeamEditModal(teamId) {
+    // Get the root path by extracting it from the current pathname
+    let rootPath = window.location.pathname;
+    const adminIndex = rootPath.lastIndexOf("/admin");
+    if (adminIndex !== -1) {
+        rootPath = rootPath.substring(0, adminIndex);
+    } else {
+        rootPath = "";
+    }
+
+    // Construct the full URL - ensure it starts with /
+    const url = (rootPath || "") + "/admin/teams/" + teamId + "/edit";
+
+    // Load the team edit form via HTMX
+    fetch(url, {
+        method: "GET",
+        headers: {
+            Authorization: "Bearer " + (await getAuthToken()),
+        },
+    })
+        .then((response) => response.text())
+        .then((html) => {
+            document.getElementById("team-edit-modal-content").innerHTML = html;
+            document
+                .getElementById("team-edit-modal")
+                .classList.remove("hidden");
+        })
+        .catch((error) => {
+            console.error("Error loading team edit form:", error);
+        });
+}
+
+function hideTeamEditModal() {
+    document.getElementById("team-edit-modal").classList.add("hidden");
+}
+
+// Expose team modal functions to global scope
+window.showTeamEditModal = showTeamEditModal;
+window.hideTeamEditModal = hideTeamEditModal;
+
+// Team member management functions
+function showAddMemberForm(teamId) {
+    const form = document.getElementById("add-member-form-" + teamId);
+    if (form) {
+        form.classList.remove("hidden");
+    }
+}
+
+function hideAddMemberForm(teamId) {
+    const form = document.getElementById("add-member-form-" + teamId);
+    if (form) {
+        form.classList.add("hidden");
+        // Reset form
+        const formElement = form.querySelector("form");
+        if (formElement) {
+            formElement.reset();
+        }
+    }
+}
+
+// Expose team member management functions to global scope
+window.showAddMemberForm = showAddMemberForm;
+window.hideAddMemberForm = hideAddMemberForm;
+
+// Logs refresh function
+function refreshLogs() {
+    const logsSection = document.getElementById("logs");
+    if (logsSection && typeof window.htmx !== "undefined") {
+        // Trigger HTMX refresh on the logs section
+        window.htmx.trigger(logsSection, "refresh");
+    }
+}
+
+// Expose logs functions to global scope
+window.refreshLogs = refreshLogs;
+
+// User edit modal functions (already defined above)
+// Functions are already exposed to global scope
+
+// Team permissions functions are implemented in the admin.html template
+// Remove placeholder functions to avoid overriding template functionality
+
+function initializePermissionsPanel() {
+    // Load team data if available
+    if (window.USER_TEAMS && window.USER_TEAMS.length > 0) {
+        const membersList = document.getElementById("team-members-list");
+        const rolesList = document.getElementById("role-assignments-list");
+
+        if (membersList) {
+            membersList.innerHTML =
+                '<div class="text-sm text-gray-500 dark:text-gray-400">Use the Teams Management tab to view and manage team members.</div>';
+        }
+
+        if (rolesList) {
+            rolesList.innerHTML =
+                '<div class="text-sm text-gray-500 dark:text-gray-400">Use the Teams Management tab to assign roles to team members.</div>';
+        }
+    }
+}
+
+// Permission functions are implemented in admin.html template - don't override them
+window.initializePermissionsPanel = initializePermissionsPanel;
+
+// ===================================================================
+// TEAM DISCOVERY AND SELF-SERVICE FUNCTIONS
+// ===================================================================
+
+/**
+ * Load and display public teams that the user can join
+ */
+async function loadPublicTeams() {
+    const container = safeGetElement("public-teams-list");
+    if (!container) {
+        console.error("Public teams list container not found");
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML =
+        '<div class="animate-pulse text-gray-500 dark:text-gray-400">Loading public teams...</div>';
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH || ""}/teams/discover`,
+            {
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+        if (!response.ok) {
+            throw new Error(`Failed to load teams: ${response.status}`);
+        }
+
+        const teams = await response.json();
+        displayPublicTeams(teams);
+    } catch (error) {
+        console.error("Error loading public teams:", error);
+        container.innerHTML = `
+            <div class="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-md p-4">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                            Failed to load public teams
+                        </h3>
+                        <div class="mt-2 text-sm text-red-700 dark:text-red-300">
+                            ${escapeHtml(error.message)}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+}
+
+/**
+ * Display public teams in the UI
+ * @param {Array} teams - Array of team objects
+ */
+function displayPublicTeams(teams) {
+    const container = safeGetElement("public-teams-list");
+    if (!container) {
+        return;
+    }
+
+    if (!teams || teams.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.83-1M17 20H7m10 0v-2c0-1.09-.29-2.11-.83-3M7 20v2m0-2v-2a3 3 0 011.87-2.77m0 0A3 3 0 017 12m0 0a3 3 0 013-3m-3 3h6.4M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No public teams found</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">There are no public teams available to join at the moment.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Create teams grid
+    const teamsHtml = teams
+        .map(
+            (team) => `
+        <div class="bg-white dark:bg-gray-700 shadow rounded-lg p-6 hover:shadow-lg transition-shadow">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                    ${escapeHtml(team.name)}
+                </h3>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Public
+                </span>
+            </div>
+
+            ${
+                team.description
+                    ? `
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                    ${escapeHtml(team.description)}
+                </p>
+            `
+                    : ""
+            }
+
+            <div class="mt-4 flex items-center justify-between">
+                <div class="flex items-center text-sm text-gray-500 dark:text-gray-400">
+                    <svg class="flex-shrink-0 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                    </svg>
+                    ${team.member_count} members
+                </div>
+                <button
+                    onclick="requestToJoinTeam('${escapeHtml(team.id)}')"
+                    class="px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                    Request to Join
+                </button>
+            </div>
+        </div>
+    `,
+        )
+        .join("");
+
+    container.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            ${teamsHtml}
+        </div>
+    `;
+}
+
+/**
+ * Request to join a public team
+ * @param {string} teamId - ID of the team to join
+ */
+async function requestToJoinTeam(teamId) {
+    if (!teamId) {
+        console.error("Team ID is required");
+        return;
+    }
+
+    // Show confirmation dialog
+    const message = prompt("Optional: Enter a message to the team owners:");
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH || ""}/teams/${teamId}/join`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    message: message || null,
+                }),
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            throw new Error(
+                errorData?.detail ||
+                    `Failed to request join: ${response.status}`,
+            );
+        }
+
+        const result = await response.json();
+
+        // Show success message
+        showSuccessMessage(
+            `Join request sent to ${result.team_name}! Team owners will review your request.`,
+        );
+
+        // Refresh the public teams list
+        setTimeout(loadPublicTeams, 1000);
+    } catch (error) {
+        console.error("Error requesting to join team:", error);
+        showErrorMessage(`Failed to send join request: ${error.message}`);
+    }
+}
+
+/**
+ * Leave a team
+ * @param {string} teamId - ID of the team to leave
+ * @param {string} teamName - Name of the team (for confirmation)
+ */
+async function leaveTeam(teamId, teamName) {
+    if (!teamId) {
+        console.error("Team ID is required");
+        return;
+    }
+
+    // Show confirmation dialog
+    const confirmed = confirm(
+        `Are you sure you want to leave the team "${teamName}"? This action cannot be undone.`,
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH || ""}/teams/${teamId}/leave`,
+            {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            throw new Error(
+                errorData?.detail || `Failed to leave team: ${response.status}`,
+            );
+        }
+
+        await response.json();
+
+        // Show success message
+        showSuccessMessage(`Successfully left ${teamName}`);
+
+        // Refresh teams list
+        const teamsList = safeGetElement("teams-list");
+        if (teamsList && window.htmx) {
+            window.htmx.trigger(teamsList, "load");
+        }
+
+        // Refresh team selector if available
+        if (typeof updateTeamContext === "function") {
+            // Force reload teams data
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        }
+    } catch (error) {
+        console.error("Error leaving team:", error);
+        showErrorMessage(`Failed to leave team: ${error.message}`);
+    }
+}
+
+/**
+ * Approve a join request
+ * @param {string} teamId - ID of the team
+ * @param {string} requestId - ID of the join request
+ */
+async function approveJoinRequest(teamId, requestId) {
+    if (!teamId || !requestId) {
+        console.error("Team ID and request ID are required");
+        return;
+    }
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH || ""}/teams/${teamId}/join-requests/${requestId}/approve`,
+            {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            throw new Error(
+                errorData?.detail ||
+                    `Failed to approve join request: ${response.status}`,
+            );
+        }
+
+        const result = await response.json();
+
+        // Show success message
+        showSuccessMessage(
+            `Join request approved! ${result.user_email} is now a member.`,
+        );
+
+        // Refresh teams list
+        const teamsList = safeGetElement("teams-list");
+        if (teamsList && window.htmx) {
+            window.htmx.trigger(teamsList, "load");
+        }
+    } catch (error) {
+        console.error("Error approving join request:", error);
+        showErrorMessage(`Failed to approve join request: ${error.message}`);
+    }
+}
+
+/**
+ * Reject a join request
+ * @param {string} teamId - ID of the team
+ * @param {string} requestId - ID of the join request
+ */
+async function rejectJoinRequest(teamId, requestId) {
+    if (!teamId || !requestId) {
+        console.error("Team ID and request ID are required");
+        return;
+    }
+
+    const confirmed = confirm(
+        "Are you sure you want to reject this join request?",
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH || ""}/teams/${teamId}/join-requests/${requestId}`,
+            {
+                method: "DELETE",
+                headers: {
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                    "Content-Type": "application/json",
+                },
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => null);
+            throw new Error(
+                errorData?.detail ||
+                    `Failed to reject join request: ${response.status}`,
+            );
+        }
+
+        // Show success message
+        showSuccessMessage("Join request rejected.");
+
+        // Refresh teams list
+        const teamsList = safeGetElement("teams-list");
+        if (teamsList && window.htmx) {
+            window.htmx.trigger(teamsList, "load");
+        }
+    } catch (error) {
+        console.error("Error rejecting join request:", error);
+        showErrorMessage(`Failed to reject join request: ${error.message}`);
+    }
+}
+
+// Expose team functions to global scope
+window.loadPublicTeams = loadPublicTeams;
+window.requestToJoinTeam = requestToJoinTeam;
+window.leaveTeam = leaveTeam;
+window.approveJoinRequest = approveJoinRequest;
+window.rejectJoinRequest = rejectJoinRequest;
+
+/**
+ * Validate password match in user edit form
+ */
+function validatePasswordMatch() {
+    const passwordField = document.getElementById("password-field");
+    const confirmPasswordField = document.getElementById(
+        "confirm-password-field",
+    );
+    const messageElement = document.getElementById("password-match-message");
+    const submitButton = document.querySelector(
+        '#user-edit-modal-content button[type="submit"]',
+    );
+
+    if (!passwordField || !confirmPasswordField || !messageElement) {
+        return;
+    }
+
+    const password = passwordField.value;
+    const confirmPassword = confirmPasswordField.value;
+
+    // Only show validation if both fields have content or if confirm field has content
+    if (
+        (password.length > 0 || confirmPassword.length > 0) &&
+        password !== confirmPassword
+    ) {
+        messageElement.classList.remove("hidden");
+        confirmPasswordField.classList.add("border-red-500");
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.classList.add("opacity-50", "cursor-not-allowed");
+        }
+    } else {
+        messageElement.classList.add("hidden");
+        confirmPasswordField.classList.remove("border-red-500");
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+    }
+}
+
+// Expose password validation function to global scope
+window.validatePasswordMatch = validatePasswordMatch;
+
+// ===================================================================
+// SELECTIVE IMPORT FUNCTIONS
+// ===================================================================
+
+/**
+ * Display import preview with selective import options
+ */
+function displayImportPreview(preview) {
+    console.log("📋 Displaying import preview:", preview);
+
+    // Find or create preview container
+    let previewContainer = document.getElementById("import-preview-container");
+    if (!previewContainer) {
+        previewContainer = document.createElement("div");
+        previewContainer.id = "import-preview-container";
+        previewContainer.className = "mt-6 border-t pt-6";
+
+        // Insert after import options in the import section
+        const importSection =
+            document.querySelector("#import-drop-zone").parentElement
+                .parentElement;
+        importSection.appendChild(previewContainer);
+    }
+
+    previewContainer.innerHTML = `
+        <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-4">
+            📋 Selective Import - Choose What to Import
+        </h4>
+
+        <!-- Summary -->
+        <div class="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+            <div class="flex items-center">
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                        Found ${preview.summary.total_items} items in import file
+                    </h3>
+                    <div class="mt-1 text-sm text-blue-600 dark:text-blue-300">
+                        ${Object.entries(preview.summary.by_type)
+                            .map(([type, count]) => `${type}: ${count}`)
+                            .join(", ")}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selection Controls -->
+        <div class="flex justify-between items-center mb-4">
+            <div class="space-x-4">
+                <button onclick="selectAllItems()"
+                        class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline">
+                    Select All
+                </button>
+                <button onclick="selectNoneItems()"
+                        class="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-300 underline">
+                    Select None
+                </button>
+                <button onclick="selectOnlyCustom()"
+                        class="text-sm text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 underline">
+                    Custom Items Only
+                </button>
+            </div>
+
+            <div class="text-sm text-gray-500 dark:text-gray-400">
+                <span id="selection-count">0 items selected</span>
+            </div>
+        </div>
+
+        <!-- Gateway Bundles -->
+        ${
+            Object.keys(preview.bundles || {}).length > 0
+                ? `
+            <div class="mb-6">
+                <h5 class="text-md font-medium text-gray-900 dark:text-white mb-3">
+                    🌐 Gateway Bundles (Gateway + Auto-discovered Items)
+                </h5>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    ${Object.entries(preview.bundles)
+                        .map(
+                            ([gatewayName, bundle]) => `
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-750">
+                            <label class="flex items-start cursor-pointer">
+                                <input type="checkbox"
+                                       class="gateway-checkbox mt-1 mr-3"
+                                       data-gateway="${gatewayName}"
+                                       onchange="updateSelectionCount()">
+                                <div class="flex-1">
+                                    <div class="font-medium text-gray-900 dark:text-white">
+                                        ${bundle.gateway.name}
+                                    </div>
+                                    <div class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                                        ${bundle.gateway.description || "No description"}
+                                    </div>
+                                    <div class="text-xs text-blue-600 dark:text-blue-400">
+                                        Bundle includes: ${bundle.total_items} items
+                                        (${Object.entries(bundle.items)
+                                            .filter(
+                                                ([type, items]) =>
+                                                    items.length > 0,
+                                            )
+                                            .map(
+                                                ([type, items]) =>
+                                                    `${items.length} ${type}`,
+                                            )
+                                            .join(", ")})
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    `,
+                        )
+                        .join("")}
+                </div>
+            </div>
+        `
+                : ""
+        }
+
+        <!-- Custom Items by Type -->
+        ${Object.entries(preview.items || {})
+            .map(([entityType, items]) => {
+                const customItems = items.filter((item) => item.is_custom);
+                return customItems.length > 0
+                    ? `
+                <div class="mb-6">
+                    <h5 class="text-md font-medium text-gray-900 dark:text-white mb-3 capitalize">
+                        🛠️ Custom ${entityType}
+                    </h5>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        ${customItems
+                            .map(
+                                (item) => `
+                            <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-3 hover:bg-gray-50 dark:hover:bg-gray-750 ${item.conflicts_with ? "border-orange-300 dark:border-orange-700 bg-orange-50 dark:bg-orange-900" : ""}">
+                                <label class="flex items-start cursor-pointer">
+                                    <input type="checkbox"
+                                           class="item-checkbox mt-1 mr-3"
+                                           data-type="${entityType}"
+                                           data-id="${item.id}"
+                                           onchange="updateSelectionCount()">
+                                    <div class="flex-1">
+                                        <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                            ${item.name}
+                                            ${
+                                                item.conflicts_with
+                                                    ? '<span class="text-orange-600 text-xs ml-1">⚠️ Conflict</span>'
+                                                    : ""
+                                            }
+                                        </div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                                            ${item.description || `Custom ${entityType} item`}
+                                        </div>
+                                    </div>
+                                </label>
+                            </div>
+                        `,
+                            )
+                            .join("")}
+                    </div>
+                </div>
+            `
+                    : "";
+            })
+            .join("")}
+
+        <!-- Conflicts Warning -->
+        ${
+            Object.keys(preview.conflicts || {}).length > 0
+                ? `
+            <div class="mb-6">
+                <div class="bg-orange-50 dark:bg-orange-900 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-orange-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-orange-800 dark:text-orange-200">
+                                Naming conflicts detected
+                            </h3>
+                            <div class="mt-1 text-sm text-orange-600 dark:text-orange-300">
+                                Some items have the same names as existing items. Use conflict strategy to resolve.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `
+                : ""
+        }
+
+        <!-- Action Buttons -->
+        <div class="flex justify-between pt-6 border-t border-gray-200 dark:border-gray-700">
+            <button onclick="resetImportSelection()"
+                    class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700">
+                🔄 Reset Selection
+            </button>
+
+            <div class="space-x-3">
+                <button onclick="handleSelectiveImport(true)"
+                        class="px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-md hover:bg-blue-100 dark:hover:bg-blue-800">
+                    🧪 Preview Selected
+                </button>
+                <button onclick="handleSelectiveImport(false)"
+                        class="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700">
+                    ✅ Import Selected Items
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Store preview data and show preview section
+    window.currentImportPreview = preview;
+    updateSelectionCount();
+}
+
+/**
+ * Handle selective import based on user selections
+ */
+async function handleSelectiveImport(dryRun = false) {
+    console.log(`🎯 Starting selective import (dry_run=${dryRun})`);
+
+    if (!window.currentImportData) {
+        showNotification("❌ Please select an import file first", "error");
+        return;
+    }
+
+    try {
+        showImportProgress(true);
+
+        // Collect user selections
+        const selectedEntities = collectUserSelections();
+
+        if (Object.keys(selectedEntities).length === 0) {
+            showNotification(
+                "❌ Please select at least one item to import",
+                "warning",
+            );
+            showImportProgress(false);
+            return;
+        }
+
+        const conflictStrategy =
+            document.getElementById("import-conflict-strategy")?.value ||
+            "update";
+        const rekeySecret =
+            document.getElementById("import-rekey-secret")?.value || null;
+
+        const requestData = {
+            import_data: window.currentImportData,
+            conflict_strategy: conflictStrategy,
+            dry_run: dryRun,
+            rekey_secret: rekeySecret,
+            selectedEntities,
+        };
+
+        console.log("🎯 Selected entities for import:", selectedEntities);
+
+        const response = await fetch(
+            (window.ROOT_PATH || "") + "/admin/import/configuration",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${await getAuthToken()}`,
+                },
+                body: JSON.stringify(requestData),
+            },
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(
+                errorData.detail || `Import failed: ${response.statusText}`,
+            );
+        }
+
+        const result = await response.json();
+        displayImportResults(result, dryRun);
+
+        if (!dryRun) {
+            refreshCurrentTabData();
+            showNotification(
+                "✅ Selective import completed successfully",
+                "success",
+            );
+        } else {
+            showNotification("✅ Import preview completed", "success");
+        }
+    } catch (error) {
+        console.error("Selective import error:", error);
+        showNotification(`❌ Import failed: ${error.message}`, "error");
+    } finally {
+        showImportProgress(false);
+    }
+}
+
+/**
+ * Collect user selections for selective import
+ */
+function collectUserSelections() {
+    const selections = {};
+
+    // Collect gateway selections
+    document
+        .querySelectorAll(".gateway-checkbox:checked")
+        .forEach((checkbox) => {
+            const gatewayName = checkbox.dataset.gateway;
+            if (!selections.gateways) {
+                selections.gateways = [];
+            }
+            selections.gateways.push(gatewayName);
+        });
+
+    // Collect individual item selections
+    document.querySelectorAll(".item-checkbox:checked").forEach((checkbox) => {
+        const entityType = checkbox.dataset.type;
+        const itemId = checkbox.dataset.id;
+        if (!selections[entityType]) {
+            selections[entityType] = [];
+        }
+        selections[entityType].push(itemId);
+    });
+
+    return selections;
+}
+
+/**
+ * Update selection count display
+ */
+function updateSelectionCount() {
+    const gatewayCount = document.querySelectorAll(
+        ".gateway-checkbox:checked",
+    ).length;
+    const itemCount = document.querySelectorAll(
+        ".item-checkbox:checked",
+    ).length;
+    const totalCount = gatewayCount + itemCount;
+
+    const countElement = document.getElementById("selection-count");
+    if (countElement) {
+        countElement.textContent = `${totalCount} items selected (${gatewayCount} gateways, ${itemCount} individual items)`;
+    }
+}
+
+/**
+ * Select all items
+ */
+function selectAllItems() {
+    document
+        .querySelectorAll(".gateway-checkbox, .item-checkbox")
+        .forEach((checkbox) => {
+            checkbox.checked = true;
+        });
+    updateSelectionCount();
+}
+
+/**
+ * Select no items
+ */
+function selectNoneItems() {
+    document
+        .querySelectorAll(".gateway-checkbox, .item-checkbox")
+        .forEach((checkbox) => {
+            checkbox.checked = false;
+        });
+    updateSelectionCount();
+}
+
+/**
+ * Select only custom items (not gateway items)
+ */
+function selectOnlyCustom() {
+    document.querySelectorAll(".gateway-checkbox").forEach((checkbox) => {
+        checkbox.checked = false;
+    });
+    document.querySelectorAll(".item-checkbox").forEach((checkbox) => {
+        checkbox.checked = true;
+    });
+    updateSelectionCount();
+}
+
+/**
+ * Reset import selection
+ */
+function resetImportSelection() {
+    const previewContainer = document.getElementById(
+        "import-preview-container",
+    );
+    if (previewContainer) {
+        previewContainer.remove();
+    }
+    window.currentImportPreview = null;
+}
+
+/* ---------------------------------------------------------------------------
+  Robust reloadAllResourceSections
+  - Replaces each section's full innerHTML with a server-rendered partial
+  - Restores saved initial markup on failure
+  - Re-runs initializers (Alpine, CodeMirror, select/pills, event handlers)
+--------------------------------------------------------------------------- */
+
+(function registerReloadAllResourceSections() {
+    // list of sections we manage
+    const SECTION_NAMES = [
+        "tools",
+        "resources",
+        "prompts",
+        "servers",
+        "gateways",
+        "catalog",
+    ];
+
+    // Save initial markup on first full load so we can restore exactly if needed
+    document.addEventListener("DOMContentLoaded", () => {
+        window.__initialSectionMarkup = window.__initialSectionMarkup || {};
+        SECTION_NAMES.forEach((s) => {
+            const el = document.getElementById(`${s}-section`);
+            if (el && !(s in window.__initialSectionMarkup)) {
+                // store the exact innerHTML produced by the server initially
+                window.__initialSectionMarkup[s] = el.innerHTML;
+            }
+        });
+    });
+
+    // Helper: try to re-run common initializers after a section's DOM is replaced
+    function reinitializeSection(sectionEl, sectionName) {
+        try {
+            if (!sectionEl) {
+                return;
+            }
+
+            // 1) Re-init Alpine for the new subtree (if Alpine is present)
+            try {
+                if (window.Alpine) {
+                    // For Alpine 3 use initTree if available
+                    if (typeof window.Alpine.initTree === "function") {
+                        window.Alpine.initTree(sectionEl);
+                    } else if (
+                        typeof window.Alpine.discoverAndRegisterComponents ===
+                        "function"
+                    ) {
+                        // fallback: attempt a component discovery if available
+                        window.Alpine.discoverAndRegisterComponents(sectionEl);
+                    }
+                }
+            } catch (err) {
+                console.warn(
+                    "Alpine re-init failed for section",
+                    sectionName,
+                    err,
+                );
+            }
+
+            // 2) Re-initialize tool/resource/pill helpers that expect DOM structure
+            try {
+                // these functions exist elsewhere in admin.js; call them if present
+                if (typeof initResourceSelect === "function") {
+                    // Many panels use specific ids — attempt to call generic initializers if they exist
+                    initResourceSelect(
+                        "associatedResources",
+                        "resource-pills",
+                        "resource-warn",
+                        10,
+                        null,
+                        null,
+                    );
+                }
+                if (typeof initToolSelect === "function") {
+                    initToolSelect(
+                        "associatedTools",
+                        "tool-pills",
+                        "tool-warn",
+                        10,
+                        null,
+                        null,
+                    );
+                }
+                // restore generic tool/resource selection areas if present
+                if (typeof initResourceSelect === "function") {
+                    // try specific common containers if present (safeGetElement suppresses warnings)
+                    const containers = [
+                        "edit-server-resources",
+                        "edit-server-tools",
+                    ];
+                    containers.forEach((cid) => {
+                        const c = document.getElementById(cid);
+                        if (c && typeof initResourceSelect === "function") {
+                            // caller may have different arg signature — best-effort call is OK
+                            // we don't want to throw here if arguments mismatch
+                            try {
+                                /* no args: assume function will find DOM by ids */ initResourceSelect();
+                            } catch (e) {
+                                /* ignore */
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn("Select/pill reinit error", err);
+            }
+
+            // 3) Re-run integration & schema handlers which attach behaviour to new inputs
+            try {
+                if (typeof setupIntegrationTypeHandlers === "function") {
+                    setupIntegrationTypeHandlers();
+                }
+                if (typeof setupSchemaModeHandlers === "function") {
+                    setupSchemaModeHandlers();
+                }
+            } catch (err) {
+                console.warn("Integration/schema handler reinit failed", err);
+            }
+
+            // 4) Reinitialize CodeMirror editors within the replaced DOM (if CodeMirror used)
+            try {
+                if (window.CodeMirror) {
+                    // For any <textarea class="codemirror"> re-create or refresh editors
+                    const textareas = sectionEl.querySelectorAll("textarea");
+                    textareas.forEach((ta) => {
+                        // If the page previously attached a CodeMirror instance on same textarea,
+                        // the existing instance may have been stored on the element. If refresh available, refresh it.
+                        if (
+                            ta.CodeMirror &&
+                            typeof ta.CodeMirror.refresh === "function"
+                        ) {
+                            ta.CodeMirror.refresh();
+                        } else {
+                            // Create a new CodeMirror instance only when an explicit init function is present on page
+                            if (
+                                typeof window.createCodeMirrorForTextarea ===
+                                "function"
+                            ) {
+                                try {
+                                    window.createCodeMirrorForTextarea(ta);
+                                } catch (e) {
+                                    // ignore - not all textareas need CodeMirror
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn("CodeMirror reinit failed", err);
+            }
+
+            // 5) Re-attach generic event wiring that is expected by the UI (checkboxes, buttons)
+            try {
+                // checkbox-driven pill updates
+                const checkboxChangeEvent = new Event("change", {
+                    bubbles: true,
+                });
+                sectionEl
+                    .querySelectorAll('input[type="checkbox"]')
+                    .forEach((cb) => {
+                        // If there were checkbox-specific change functions on page, they will now re-run
+                        cb.dispatchEvent(checkboxChangeEvent);
+                    });
+
+                // Reconnect any HTMX triggers that expect a load event
+                if (window.htmx && typeof window.htmx.trigger === "function") {
+                    // find elements with data-htmx or that previously had an HTMX load
+                    const htmxTargets = sectionEl.querySelectorAll(
+                        "[hx-get], [hx-post], [data-hx-load]",
+                    );
+                    htmxTargets.forEach((el) => {
+                        try {
+                            window.htmx.trigger(el, "load");
+                        } catch (e) {
+                            /* ignore */
+                        }
+                    });
+                }
+            } catch (err) {
+                console.warn("Event wiring re-attach failed", err);
+            }
+
+            // 6) Accessibility / visual: force a small layout reflow, useful in some browsers
+            try {
+                // eslint-disable-next-line no-unused-expressions
+                sectionEl.offsetHeight; // read to force reflow
+            } catch (e) {
+                /* ignore */
+            }
+        } catch (err) {
+            console.error("Error reinitializing section", sectionName, err);
+        }
+    }
+
+    function updateSectionHeaders(teamId) {
+        const sections = [
+            "tools",
+            "resources",
+            "prompts",
+            "servers",
+            "gateways",
+        ];
+
+        sections.forEach((section) => {
+            const header = document.querySelector(
+                "#" + section + "-section h2",
+            );
+            if (header) {
+                // Remove existing team badge
+                const existingBadge = header.querySelector(".team-badge");
+                if (existingBadge) {
+                    existingBadge.remove();
+                }
+
+                // Add team badge if team is selected
+                if (teamId && teamId !== "") {
+                    const teamName = getTeamNameById(teamId);
+                    if (teamName) {
+                        const badge = document.createElement("span");
+                        badge.className =
+                            "team-badge inline-flex items-center px-2 py-1 ml-2 text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 rounded-full";
+                        badge.textContent = teamName;
+                        header.appendChild(badge);
+                    }
+                }
+            }
+        });
+    }
+
+    function getTeamNameById(teamId) {
+        // Get team name from Alpine.js data or fallback
+        const teamSelector = document.querySelector('[x-data*="selectedTeam"]');
+        if (
+            teamSelector &&
+            teamSelector._x_dataStack &&
+            teamSelector._x_dataStack[0].teams
+        ) {
+            const team = teamSelector._x_dataStack[0].teams.find(
+                (t) => t.id === teamId,
+            );
+            return team ? team.name : null;
+        }
+        return null;
+    }
+
+    // The exported function: reloadAllResourceSections
+    async function reloadAllResourceSections(teamId) {
+        const sections = [
+            "tools",
+            "resources",
+            "prompts",
+            "servers",
+            "gateways",
+        ];
+
+        // ensure there is a ROOT_PATH set
+        if (!window.ROOT_PATH) {
+            console.warn(
+                "ROOT_PATH not defined; aborting reloadAllResourceSections",
+            );
+            return;
+        }
+
+        // Iterate sections sequentially to avoid overloading the server and to ensure consistent order.
+        for (const section of sections) {
+            const sectionEl = document.getElementById(`${section}-section`);
+            if (!sectionEl) {
+                console.warn(`Section element not found: ${section}-section`);
+                continue;
+            }
+
+            // Build server partial URL (server should return the *full HTML fragment* for the section)
+            // Server endpoint pattern: /admin/sections/{section}?partial=true
+            let url = `${window.ROOT_PATH}/admin/sections/${section}?partial=true`;
+            if (teamId && teamId !== "") {
+                url += `&team_id=${encodeURIComponent(teamId)}`;
+            }
+
+            try {
+                const resp = await fetchWithTimeout(
+                    url,
+                    { credentials: "same-origin" },
+                    window.MCPGATEWAY_UI_TOOL_TEST_TIMEOUT || 60000,
+                );
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+                const html = await resp.text();
+
+                // Replace entire section's innerHTML with server-provided HTML to keep DOM identical.
+                // Use safeSetInnerHTML with isTrusted = true because this is server-rendered trusted content.
+                safeSetInnerHTML(sectionEl, html, true);
+
+                // After replacement, re-run local initializers so the new DOM behaves like initial load
+                reinitializeSection(sectionEl, section);
+            } catch (err) {
+                console.error(
+                    `Failed to load section ${section} from server:`,
+                    err,
+                );
+
+                // Restore the original markup exactly as it was on initial load (fallback)
+                if (
+                    window.__initialSectionMarkup &&
+                    window.__initialSectionMarkup[section]
+                ) {
+                    sectionEl.innerHTML =
+                        window.__initialSectionMarkup[section];
+                    // Re-run initializers on restored markup as well
+                    reinitializeSection(sectionEl, section);
+                    console.log(
+                        `Restored initial markup for section ${section}`,
+                    );
+                } else {
+                    // No fallback available: leave existing DOM intact and show error to console
+                    console.warn(
+                        `No saved initial markup for section ${section}; leaving DOM untouched`,
+                    );
+                }
+            }
+        }
+
+        // Update headers (team badges) after reload
+        try {
+            if (typeof updateSectionHeaders === "function") {
+                updateSectionHeaders(teamId);
+            }
+        } catch (err) {
+            console.warn("updateSectionHeaders failed after reload", err);
+        }
+
+        console.log("✓ reloadAllResourceSections completed");
+    }
+
+    // Export to global to keep old callers working
+    window.reloadAllResourceSections = reloadAllResourceSections;
+})();
+
+// Expose selective import functions to global scope
+window.previewImport = previewImport;
+window.handleSelectiveImport = handleSelectiveImport;
+window.displayImportPreview = displayImportPreview;
+window.collectUserSelections = collectUserSelections;
+window.updateSelectionCount = updateSelectionCount;
+window.selectAllItems = selectAllItems;
+window.selectNoneItems = selectNoneItems;
+window.selectOnlyCustom = selectOnlyCustom;
+window.resetImportSelection = resetImportSelection;
+
+// Plugin management functions
+function initializePluginFunctions() {
+    // Populate hook, tag, and author filters on page load
+    window.populatePluginFilters = function () {
+        const cards = document.querySelectorAll(".plugin-card");
+        const hookSet = new Set();
+        const tagSet = new Set();
+        const authorSet = new Set();
+
+        cards.forEach((card) => {
+            const hooks = card.dataset.hooks
+                ? card.dataset.hooks.split(",")
+                : [];
+            const tags = card.dataset.tags ? card.dataset.tags.split(",") : [];
+            const author = card.dataset.author;
+
+            hooks.forEach((hook) => {
+                if (hook.trim()) {
+                    hookSet.add(hook.trim());
+                }
+            });
+            tags.forEach((tag) => {
+                if (tag.trim()) {
+                    tagSet.add(tag.trim());
+                }
+            });
+            if (author && author.trim()) {
+                authorSet.add(author.trim());
+            }
+        });
+
+        const hookFilter = document.getElementById("plugin-hook-filter");
+        const tagFilter = document.getElementById("plugin-tag-filter");
+        const authorFilter = document.getElementById("plugin-author-filter");
+
+        if (hookFilter) {
+            hookSet.forEach((hook) => {
+                const option = document.createElement("option");
+                option.value = hook;
+                option.textContent = hook
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (l) => l.toUpperCase());
+                hookFilter.appendChild(option);
+            });
+        }
+
+        if (tagFilter) {
+            tagSet.forEach((tag) => {
+                const option = document.createElement("option");
+                option.value = tag;
+                option.textContent = tag;
+                tagFilter.appendChild(option);
+            });
+        }
+
+        if (authorFilter) {
+            // Convert authorSet to array and sort for consistent ordering
+            const sortedAuthors = Array.from(authorSet).sort();
+            sortedAuthors.forEach((author) => {
+                const option = document.createElement("option");
+                // Value is lowercase (matches data-author), text is capitalized for display
+                option.value = author.toLowerCase();
+                option.textContent =
+                    author.charAt(0).toUpperCase() + author.slice(1);
+                authorFilter.appendChild(option);
+            });
+        }
+    };
+
+    // Filter plugins based on search and filters
+    window.filterPlugins = function () {
+        const searchInput = document.getElementById("plugin-search");
+        const modeFilter = document.getElementById("plugin-mode-filter");
+        const statusFilter = document.getElementById("plugin-status-filter");
+        const hookFilter = document.getElementById("plugin-hook-filter");
+        const tagFilter = document.getElementById("plugin-tag-filter");
+        const authorFilter = document.getElementById("plugin-author-filter");
+
+        const searchQuery = searchInput ? searchInput.value.toLowerCase() : "";
+        const selectedMode = modeFilter ? modeFilter.value : "";
+        const selectedStatus = statusFilter ? statusFilter.value : "";
+        const selectedHook = hookFilter ? hookFilter.value : "";
+        const selectedTag = tagFilter ? tagFilter.value : "";
+        const selectedAuthor = authorFilter ? authorFilter.value : "";
+
+        // Update visual highlighting for all filter types
+        updateBadgeHighlighting("hook", selectedHook);
+        updateBadgeHighlighting("tag", selectedTag);
+        updateBadgeHighlighting("author", selectedAuthor);
+
+        const cards = document.querySelectorAll(".plugin-card");
+
+        cards.forEach((card) => {
+            const name = card.dataset.name
+                ? card.dataset.name.toLowerCase()
+                : "";
+            const description = card.dataset.description
+                ? card.dataset.description.toLowerCase()
+                : "";
+            const author = card.dataset.author
+                ? card.dataset.author.toLowerCase()
+                : "";
+            const mode = card.dataset.mode;
+            const status = card.dataset.status;
+            const hooks = card.dataset.hooks
+                ? card.dataset.hooks.split(",")
+                : [];
+            const tags = card.dataset.tags ? card.dataset.tags.split(",") : [];
+
+            let visible = true;
+
+            // Search filter
+            if (
+                searchQuery &&
+                !name.includes(searchQuery) &&
+                !description.includes(searchQuery) &&
+                !author.includes(searchQuery)
+            ) {
+                visible = false;
+            }
+
+            // Mode filter
+            if (selectedMode && mode !== selectedMode) {
+                visible = false;
+            }
+
+            // Status filter
+            if (selectedStatus && status !== selectedStatus) {
+                visible = false;
+            }
+
+            // Hook filter
+            if (selectedHook && !hooks.includes(selectedHook)) {
+                visible = false;
+            }
+
+            // Tag filter
+            if (selectedTag && !tags.includes(selectedTag)) {
+                visible = false;
+            }
+
+            // Author filter
+            if (
+                selectedAuthor &&
+                author.trim() !== selectedAuthor.toLowerCase().trim()
+            ) {
+                visible = false;
+            }
+
+            if (visible) {
+                card.style.display = "block";
+            } else {
+                card.style.display = "none";
+            }
+        });
+    };
+
+    // Filter by hook when clicking on hook point
+    window.filterByHook = function (hook) {
+        const hookFilter = document.getElementById("plugin-hook-filter");
+        if (hookFilter) {
+            hookFilter.value = hook;
+            window.filterPlugins();
+            hookFilter.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+            // Update visual highlighting
+            updateBadgeHighlighting("hook", hook);
+        }
+    };
+
+    // Filter by tag when clicking on tag
+    window.filterByTag = function (tag) {
+        const tagFilter = document.getElementById("plugin-tag-filter");
+        if (tagFilter) {
+            tagFilter.value = tag;
+            window.filterPlugins();
+            tagFilter.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+            // Update visual highlighting
+            updateBadgeHighlighting("tag", tag);
+        }
+    };
+
+    // Filter by author when clicking on author
+    window.filterByAuthor = function (author) {
+        const authorFilter = document.getElementById("plugin-author-filter");
+        if (authorFilter) {
+            // Convert to lowercase to match data-author attribute
+            authorFilter.value = author.toLowerCase();
+            window.filterPlugins();
+            authorFilter.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest",
+            });
+
+            // Update visual highlighting
+            updateBadgeHighlighting("author", author);
+        }
+    };
+
+    // Helper function to update badge highlighting
+    function updateBadgeHighlighting(type, value) {
+        // Define selectors for each type
+        const selectors = {
+            hook: "[onclick^='filterByHook']",
+            tag: "[onclick^='filterByTag']",
+            author: "[onclick^='filterByAuthor']",
+        };
+
+        const selector = selectors[type];
+        if (!selector) {
+            return;
+        }
+
+        // Get all badges of this type
+        const badges = document.querySelectorAll(selector);
+
+        badges.forEach((badge) => {
+            // Check if this is the "All" badge (empty value)
+            const isAllBadge = badge.getAttribute("onclick").includes("('')");
+
+            // Check if this badge matches the selected value
+            const badgeValue = badge
+                .getAttribute("onclick")
+                .match(/'([^']*)'/)?.[1];
+            const isSelected =
+                value === ""
+                    ? isAllBadge
+                    : badgeValue?.toLowerCase() === value?.toLowerCase();
+
+            if (isSelected) {
+                // Apply active/selected styling
+                badge.classList.remove(
+                    "bg-gray-100",
+                    "text-gray-800",
+                    "hover:bg-gray-200",
+                );
+                badge.classList.remove(
+                    "dark:bg-gray-700",
+                    "dark:text-gray-200",
+                    "dark:hover:bg-gray-600",
+                );
+                badge.classList.add(
+                    "bg-indigo-100",
+                    "text-indigo-800",
+                    "border",
+                    "border-indigo-300",
+                );
+                badge.classList.add(
+                    "dark:bg-indigo-900",
+                    "dark:text-indigo-200",
+                    "dark:border-indigo-700",
+                );
+            } else if (!isAllBadge) {
+                // Reset to default styling for non-All badges
+                badge.classList.remove(
+                    "bg-indigo-100",
+                    "text-indigo-800",
+                    "border",
+                    "border-indigo-300",
+                );
+                badge.classList.remove(
+                    "dark:bg-indigo-900",
+                    "dark:text-indigo-200",
+                    "dark:border-indigo-700",
+                );
+                badge.classList.add(
+                    "bg-gray-100",
+                    "text-gray-800",
+                    "hover:bg-gray-200",
+                );
+                badge.classList.add(
+                    "dark:bg-gray-700",
+                    "dark:text-gray-200",
+                    "dark:hover:bg-gray-600",
+                );
+            }
+        });
+    }
+
+    // Show plugin details modal
+    window.showPluginDetails = async function (pluginName) {
+        const modal = document.getElementById("plugin-details-modal");
+        const modalName = document.getElementById("modal-plugin-name");
+        const modalContent = document.getElementById("modal-plugin-content");
+
+        if (!modal || !modalName || !modalContent) {
+            console.error("Plugin details modal elements not found");
+            return;
+        }
+
+        // Show loading state
+        modalName.textContent = pluginName;
+        modalContent.innerHTML =
+            '<div class="text-center py-4">Loading...</div>';
+        modal.classList.remove("hidden");
+
+        try {
+            const rootPath = window.ROOT_PATH || "";
+            // Fetch plugin details
+            const response = await fetch(
+                `${rootPath}/admin/plugins/${encodeURIComponent(pluginName)}`,
+                {
+                    credentials: "same-origin",
+                    headers: {
+                        Accept: "application/json",
+                    },
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Failed to load plugin details: ${response.statusText}`,
+                );
+            }
+
+            const plugin = await response.json();
+
+            // Render plugin details
+            modalContent.innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <h4 class="font-medium text-gray-700 dark:text-gray-300">Description</h4>
+                        <p class="mt-1">${plugin.description || "No description available"}</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-medium text-gray-700 dark:text-gray-300">Author</h4>
+                            <p class="mt-1">${plugin.author || "Unknown"}</p>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-700 dark:text-gray-300">Version</h4>
+                            <p class="mt-1">${plugin.version || "0.0.0"}</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-medium text-gray-700 dark:text-gray-300">Mode</h4>
+                            <p class="mt-1">
+                                <span class="px-2 py-1 text-xs rounded-full ${
+                                    plugin.mode === "enforce"
+                                        ? "bg-red-100 text-red-800"
+                                        : plugin.mode === "permissive"
+                                          ? "bg-yellow-100 text-yellow-800"
+                                          : "bg-gray-100 text-gray-800"
+                                }">
+                                    ${plugin.mode}
+                                </span>
+                            </p>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-700 dark:text-gray-300">Priority</h4>
+                            <p class="mt-1">${plugin.priority}</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-700 dark:text-gray-300">Hooks</h4>
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            ${(plugin.hooks || [])
+                                .map(
+                                    (hook) =>
+                                        `<span class="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">${hook}</span>`,
+                                )
+                                .join("")}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-700 dark:text-gray-300">Tags</h4>
+                        <div class="mt-1 flex flex-wrap gap-1">
+                            ${(plugin.tags || [])
+                                .map(
+                                    (tag) =>
+                                        `<span class="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded">${tag}</span>`,
+                                )
+                                .join("")}
+                        </div>
+                    </div>
+
+                    ${
+                        plugin.config && Object.keys(plugin.config).length > 0
+                            ? `
+                        <div>
+                            <h4 class="font-medium text-gray-700 dark:text-gray-300">Configuration</h4>
+                            <pre class="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded text-xs overflow-x-auto">${JSON.stringify(plugin.config, null, 2)}</pre>
+                        </div>
+                    `
+                            : ""
+                    }
+                </div>
+            `;
+        } catch (error) {
+            console.error("Error loading plugin details:", error);
+            modalContent.innerHTML = `
+                <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                    <strong class="font-bold">Error:</strong>
+                    <span class="block sm:inline">${error.message}</span>
+                </div>
+            `;
+        }
+    };
+
+    // Close plugin details modal
+    window.closePluginDetails = function () {
+        const modal = document.getElementById("plugin-details-modal");
+        if (modal) {
+            modal.classList.add("hidden");
+        }
+    };
+}
+
+// Initialize plugin functions if plugins panel exists
+if (document.getElementById("plugins-panel")) {
+    initializePluginFunctions();
+    // Populate filter dropdowns on initial load
+    if (window.populatePluginFilters) {
+        window.populatePluginFilters();
+    }
+}
+
+// Expose plugin functions to global scope
+window.initializePluginFunctions = initializePluginFunctions;
+
+// ===================================================================
+// MCP REGISTRY MODAL FUNCTIONS
+// ===================================================================
+
+// Define modal functions in global scope for MCP Registry
+window.showApiKeyModal = function (serverId, serverName, serverUrl) {
+    const modal = document.getElementById("api-key-modal");
+    if (modal) {
+        document.getElementById("modal-server-id").value = serverId;
+        document.getElementById("modal-server-name").textContent = serverName;
+        document.getElementById("modal-custom-name").placeholder = serverName;
+        modal.classList.remove("hidden");
+    }
+};
+
+window.closeApiKeyModal = function () {
+    const modal = document.getElementById("api-key-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+    }
+    const form = document.getElementById("api-key-form");
+    if (form) {
+        form.reset();
+    }
+};
+
+window.submitApiKeyForm = function (event) {
+    event.preventDefault();
+    const serverId = document.getElementById("modal-server-id").value;
+    const customName = document.getElementById("modal-custom-name").value;
+    const apiKey = document.getElementById("modal-api-key").value;
+
+    // Prepare request data
+    const requestData = {};
+    if (customName) {
+        requestData.name = customName;
+    }
+    if (apiKey) {
+        requestData.api_key = apiKey;
+    }
+
+    const rootPath = window.ROOT_PATH || "";
+
+    // Send registration request
+    fetch(`${rootPath}/admin/mcp-registry/${serverId}/register`, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + (getCookie("jwt_token") || ""),
+        },
+        body: JSON.stringify(requestData),
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.success) {
+                window.closeApiKeyModal();
+                // Reload the catalog
+                if (window.htmx && window.htmx.ajax) {
+                    window.htmx.ajax(
+                        "GET",
+                        `${rootPath}/admin/mcp-registry/partial`,
+                        {
+                            target: "#mcp-registry-content",
+                            swap: "innerHTML",
+                        },
+                    );
+                }
+            } else {
+                alert("Registration failed: " + (data.error || data.message));
+            }
+        })
+        .catch((error) => {
+            alert("Error registering server: " + error);
+        });
+};
+
+// gRPC Services Functions
+
+/**
+ * Toggle visibility of TLS certificate/key fields based on TLS checkbox
+ */
+window.toggleGrpcTlsFields = function () {
+    const tlsEnabled =
+        document.getElementById("grpc-tls-enabled")?.checked || false;
+    const certField = document.getElementById("grpc-tls-cert-field");
+    const keyField = document.getElementById("grpc-tls-key-field");
+
+    if (tlsEnabled) {
+        certField?.classList.remove("hidden");
+        keyField?.classList.remove("hidden");
+    } else {
+        certField?.classList.add("hidden");
+        keyField?.classList.add("hidden");
+    }
+};
+
+/**
+ * View gRPC service methods in a modal or alert
+ * @param {string} serviceId - The gRPC service ID
+ */
+window.viewGrpcMethods = function (serviceId) {
+    const rootPath = window.ROOT_PATH || "";
+
+    fetch(`${rootPath}/grpc/${serviceId}/methods`, {
+        method: "GET",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + (getCookie("jwt_token") || ""),
+        },
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.methods && data.methods.length > 0) {
+                let methodsList = "gRPC Methods:\n\n";
+                data.methods.forEach((method) => {
+                    methodsList += `${method.full_name}\n`;
+                    methodsList += `  Input: ${method.input_type || "N/A"}\n`;
+                    methodsList += `  Output: ${method.output_type || "N/A"}\n`;
+                    if (method.client_streaming || method.server_streaming) {
+                        methodsList += `  Streaming: ${method.client_streaming ? "Client" : ""} ${method.server_streaming ? "Server" : ""}\n`;
+                    }
+                    methodsList += "\n";
+                });
+                alert(methodsList);
+            } else {
+                alert(
+                    "No methods discovered for this service. Try re-reflecting the service.",
+                );
+            }
+        })
+        .catch((error) => {
+            alert("Error fetching methods: " + error);
+        });
+};
+
+// Helper function to get cookie if not already defined
+if (typeof window.getCookie === "undefined") {
+    window.getCookie = function (name) {
+        const value = "; " + document.cookie;
+        const parts = value.split("; " + name + "=");
+        if (parts.length === 2) {
+            return parts.pop().split(";").shift();
+        }
+        return "";
+    };
+}
+
+// ==================== LLM CHAT FUNCTIONALITY ====================
+
+// State management for LLM chat
+const llmChatState = {
+    selectedServerId: null,
+    selectedServerName: null,
+    isConnected: false,
+    userId: null,
+    messageHistory: [],
+    connectedTools: [],
+    toolCount: 0,
+    serverToken: "",
+};
+
+/**
+ * Initialize LLM Chat when tab is shown
+ */
+function initializeLLMChat() {
+    console.log("Initializing LLM Chat...");
+
+    // Generate or retrieve user ID
+    llmChatState.userId = generateUserId();
+
+    // Load servers if not already loaded
+    const serversList = document.getElementById("llm-chat-servers-list");
+    if (serversList && serversList.children.length <= 1) {
+        loadVirtualServersForChat();
+    }
+
+    // Initialize chat input resize behavior
+    initializeChatInputResize();
+}
+
+/**
+ * Generate a unique user ID for the session
+ */
+function generateUserId() {
+    // Check if user ID exists in session storage
+    let userId = sessionStorage.getItem("llm_chat_user_id");
+    if (!userId) {
+        // Generate a unique ID
+        userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        sessionStorage.setItem("llm_chat_user_id", userId);
+    }
+    return userId;
+}
+
+/**
+ * Load virtual servers for chat
+ */
+async function loadVirtualServersForChat() {
+    const serversList = document.getElementById("llm-chat-servers-list");
+    if (!serversList) {
+        return;
+    }
+
+    serversList.innerHTML =
+        '<div class="flex items-center justify-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+
+    try {
+        const response = await fetchWithTimeout(
+            `${window.ROOT_PATH}/admin/servers`,
+            {
+                method: "GET",
+                credentials: "same-origin",
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const servers = Array.isArray(data) ? data : data.servers || [];
+
+        if (servers.length === 0) {
+            serversList.innerHTML =
+                '<div class="text-center text-gray-500 dark:text-gray-400 text-sm py-4">No virtual servers available</div>';
+            return;
+        }
+
+        // Render server list with "Requires Token" pill and tooltip
+        serversList.innerHTML = servers
+            .map((server) => {
+                const toolCount = (server.associatedTools || []).length;
+                const isActive = server.isActive;
+                const visibility = server.visibility || "public";
+                const requiresToken =
+                    visibility === "team" || visibility === "private";
+
+                // Generate appropriate tooltip message
+                const tooltipMessage = requiresToken
+                    ? server.visibility === "team"
+                        ? "This is a team-level server. An access token will be required to connect."
+                        : "This is a private server. An access token will be required to connect."
+                    : "";
+
+                return `
+                <div class="server-item relative p-3 border rounded-lg cursor-pointer transition-colors
+                    ${llmChatState.selectedServerId === server.id ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900" : "border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-600"}
+                    ${!isActive ? "opacity-50" : ""}"
+                    onclick="selectServerForChat('${server.id}', '${escapeHtml(server.name)}', ${isActive}, ${requiresToken}, '${visibility}')"
+                    style="position: relative;">
+
+                    ${
+                        requiresToken
+                            ? `
+                        <div class="tooltip"
+                        style="position: absolute; left: 50%; transform: translateX(-50%); bottom: 120%; margin-bottom: 8px;
+                                background-color: #6B7280; color: white; font-size: 10px; border-radius: 4px;
+                                padding: 4px 20px; /* More horizontal width */
+                                opacity: 0; visibility: hidden; transition: opacity 0.2s ease-in;
+                                z-index: 1000;"> <!-- Added higher z-index to ensure it's above other elements -->
+                        ${tooltipMessage}
+                        <div style="position: absolute; left: 50%; bottom: -5px; transform: translateX(-50%);
+                                    width: 0; height: 0; border-left: 5px solid transparent;
+                                    border-right: 5px solid transparent; border-top: 5px solid #6B7280;"></div>
+                        </div>`
+                            : ""
+                    }
+
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1 min-w-0">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate">${escapeHtml(server.name)}</h4>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${toolCount} tool${toolCount !== 1 ? "s" : ""}</p>
+                        </div>
+                        <div class="flex flex-col items-end gap-1">
+                            ${!isActive ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Inactive</span>' : ""}
+                            ${requiresToken ? '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800">Requires Token</span>' : ""}
+                        </div>
+                    </div>
+                    ${server.description ? `<p class="text-xs text-gray-600 dark:text-gray-400 mt-2 line-clamp-2">${escapeHtml(server.description)}</p>` : ""}
+                </div>
+            `;
+            })
+            .join("");
+
+        // Add hover event to show tooltip immediately on hover
+        const serverItems = document.querySelectorAll(".server-item");
+        serverItems.forEach((item) => {
+            const tooltip = item.querySelector(".tooltip");
+            item.addEventListener("mouseenter", () => {
+                if (tooltip) {
+                    tooltip.style.opacity = "1"; // Make tooltip visible
+                    tooltip.style.visibility = "visible"; // Show tooltip immediately
+                }
+            });
+            item.addEventListener("mouseleave", () => {
+                if (tooltip) {
+                    tooltip.style.opacity = "0"; // Hide tooltip
+                    tooltip.style.visibility = "hidden"; // Keep tooltip hidden when not hovering
+                }
+            });
+        });
+    } catch (error) {
+        console.error("Error loading servers for chat:", error);
+        serversList.innerHTML =
+            '<div class="text-center text-red-600 dark:text-red-400 text-sm py-4">Failed to load servers: ' +
+            escapeHtml(error.message) +
+            "</div>";
+    }
+}
+
+/**
+ * Select a server for chat
+ */
+// eslint-disable-next-line no-unused-vars
+async function selectServerForChat(
+    serverId,
+    serverName,
+    isActive,
+    requiresToken,
+    serverVisibility,
+) {
+    if (!isActive) {
+        showErrorMessage(
+            "This server is inactive. Please select an active server.",
+        );
+        return;
+    }
+
+    // If server requires token (team or private), prompt for it
+    if (requiresToken) {
+        // Create context-aware message based on visibility level
+        const visibilityMessage =
+            serverVisibility === "team"
+                ? "This is a team-level server that requires authentication for access."
+                : "This is a private server that requires authentication for access.";
+
+        const token = prompt(
+            `Authentication Required\n\n${visibilityMessage}\n\nPlease enter the access token for "${serverName}":`,
+        );
+
+        if (token === null) {
+            // User cancelled
+            return;
+        }
+
+        // Store the token temporarily for this server
+        llmChatState.serverToken = token || "";
+    } else {
+        // Public server - no token needed
+        llmChatState.serverToken = "";
+    }
+
+    // Update state
+    llmChatState.selectedServerId = serverId;
+    llmChatState.selectedServerName = serverName;
+
+    // Update UI to show selected server
+    const serverItems = document.querySelectorAll(".server-item");
+    serverItems.forEach((item) => {
+        if (item.onclick.toString().includes(serverId)) {
+            item.classList.add(
+                "border-indigo-500",
+                "bg-indigo-50",
+                "dark:bg-indigo-900",
+            );
+            item.classList.remove("border-gray-200", "dark:border-gray-600");
+        } else {
+            item.classList.remove(
+                "border-indigo-500",
+                "bg-indigo-50",
+                "dark:bg-indigo-900",
+            );
+            item.classList.add("border-gray-200", "dark:border-gray-600");
+        }
+    });
+
+    // Show and expand LLM configuration
+    const configForm = document.getElementById("llm-config-form");
+    if (configForm && configForm.classList.contains("hidden")) {
+        toggleLLMConfig();
+    }
+
+    // Enable connect button if provider is selected
+    updateConnectButtonState();
+
+    console.log(
+        `Selected server: ${serverName} (${serverId}), Visibility: ${serverVisibility}, Token: ${requiresToken ? "Required" : "Not required"}`,
+    );
+}
+
+/**
+ * Toggle LLM configuration visibility
+ */
+function toggleLLMConfig() {
+    const configForm = document.getElementById("llm-config-form");
+    const chevron = document.getElementById("llm-config-chevron");
+
+    if (configForm && chevron) {
+        configForm.classList.toggle("hidden");
+        chevron.classList.toggle("rotate-180");
+    }
+}
+
+/**
+ * Handle LLM provider selection change
+ */
+// eslint-disable-next-line no-unused-vars
+function handleLLMProviderChange() {
+    const provider = document.getElementById("llm-provider").value;
+    const azureFields = document.getElementById("azure-openai-fields");
+    const openaiFields = document.getElementById("openai-fields");
+    const anthropicFields = document.getElementById("anthropic-fields");
+    const awsBedrockFields = document.getElementById("aws-bedrock-fields");
+    const watsonxFields = document.getElementById("watsonx-fields");
+    const ollamaFields = document.getElementById("ollama-fields");
+
+    // Hide all fields first
+    azureFields.classList.add("hidden");
+    openaiFields.classList.add("hidden");
+    anthropicFields.classList.add("hidden");
+    awsBedrockFields.classList.add("hidden");
+    watsonxFields.classList.add("hidden");
+    ollamaFields.classList.add("hidden");
+
+    // Show relevant fields
+    if (provider === "azure_openai") {
+        azureFields.classList.remove("hidden");
+    } else if (provider === "openai") {
+        openaiFields.classList.remove("hidden");
+    } else if (provider === "anthropic") {
+        anthropicFields.classList.remove("hidden");
+    } else if (provider === "aws_bedrock") {
+        awsBedrockFields.classList.remove("hidden");
+    } else if (provider === "watsonx") {
+        watsonxFields.classList.remove("hidden");
+    } else if (provider === "ollama") {
+        ollamaFields.classList.remove("hidden");
+    }
+
+    // Update connect button state
+    updateConnectButtonState();
+}
+
+/**
+ * Update connect button state
+ */
+function updateConnectButtonState() {
+    const connectBtn = document.getElementById("llm-connect-btn");
+    const provider = document.getElementById("llm-provider").value;
+    const hasServer = llmChatState.selectedServerId !== null;
+
+    if (connectBtn) {
+        connectBtn.disabled = !hasServer || !provider;
+    }
+}
+
+/**
+ * Connect to LLM chat
+ */
+// eslint-disable-next-line no-unused-vars
+async function connectLLMChat() {
+    if (!llmChatState.selectedServerId) {
+        showErrorMessage("Please select a virtual server first");
+        return;
+    }
+
+    const provider = document.getElementById("llm-provider").value;
+    if (!provider) {
+        showErrorMessage("Please select an LLM provider");
+        return;
+    }
+
+    // Clear previous chat history before connecting
+    clearChatMessages();
+    llmChatState.messageHistory = [];
+
+    // Show loading state
+    const connectBtn = document.getElementById("llm-connect-btn");
+    const originalText = connectBtn.textContent;
+    connectBtn.textContent = "Connecting...";
+    connectBtn.disabled = true;
+
+    // Clear any previous error messages
+    const statusDiv = document.getElementById("llm-config-status");
+    if (statusDiv) {
+        statusDiv.classList.add("hidden");
+    }
+
+    try {
+        // Build LLM config
+        const llmConfig = buildLLMConfig(provider);
+
+        // Build server URL
+        const serverUrl = `${location.protocol}//${location.hostname}${![80, 443].includes(location.port) ? `:${location.port}` : ""}/servers/${llmChatState.selectedServerId}/mcp`;
+        console.log("Selected server URL:", serverUrl);
+
+        // Use the stored server token (empty string for public servers)
+        const jwtToken = llmChatState.serverToken || "";
+
+        const payload = {
+            user_id: llmChatState.userId,
+            server: {
+                url: serverUrl,
+                transport: "streamable_http",
+                auth_token: jwtToken,
+            },
+            llm: llmConfig,
+            streaming: true,
+        };
+
+        console.log("Connecting with payload:", {
+            ...payload,
+            server: { ...payload.server, auth_token: "REDACTED" },
+        });
+
+        // Make connection request with timeout handling
+        let response;
+        try {
+            response = await fetchWithTimeout(
+                `${window.ROOT_PATH}/llmchat/connect`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${jwtToken}`,
+                    },
+                    body: JSON.stringify(payload),
+                    credentials: "same-origin",
+                },
+                30000,
+            );
+        } catch (fetchError) {
+            // Handle network/timeout errors
+            if (
+                fetchError.name === "AbortError" ||
+                fetchError.message.includes("timeout")
+            ) {
+                throw new Error(
+                    "Connection timed out. Please check if the server is responsive and try again.",
+                );
+            }
+            throw new Error(`Network error: ${fetchError.message}`);
+        }
+
+        // Handle HTTP errors - extract backend error message
+        if (!response.ok) {
+            let errorMessage = `Connection failed (HTTP ${response.status})`;
+
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    // Use the backend error message directly
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                console.warn("Could not parse error response:", parseError);
+                // Keep generic error message
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        // Parse successful response
+        let result;
+        try {
+            result = await response.json();
+        } catch (parseError) {
+            throw new Error(
+                "Failed to parse server response. Please try again.",
+            );
+        }
+
+        console.log("Connection successful:", result);
+
+        // Update state
+        llmChatState.isConnected = true;
+        llmChatState.connectedTools = result.tools || [];
+        llmChatState.toolCount = result.tool_count || 0;
+
+        // Update UI
+        showConnectionSuccess();
+
+        // Clear welcome message and show chat input
+        const welcomeMsg = document.getElementById("chat-welcome-message");
+        if (welcomeMsg) {
+            welcomeMsg.remove();
+        }
+
+        const chatInput = document.getElementById("chat-input-container");
+        if (chatInput) {
+            chatInput.classList.remove("hidden");
+            document.getElementById("chat-input").disabled = false;
+            document.getElementById("chat-send-btn").disabled = false;
+            document.getElementById("chat-input").focus();
+        }
+
+        // Hide connect button, show disconnect button
+        const disconnectBtn = document.getElementById("llm-disconnect-btn");
+        if (connectBtn) {
+            connectBtn.classList.add("hidden");
+        }
+        if (disconnectBtn) {
+            disconnectBtn.classList.remove("hidden");
+        }
+
+        // Auto-collapse configuration
+        const configForm = document.getElementById("llm-config-form");
+        const chevron = document.getElementById("llm-config-chevron");
+        if (configForm && !configForm.classList.contains("hidden")) {
+            configForm.classList.add("hidden");
+            chevron.classList.remove("rotate-180");
+        }
+
+        // Show success message
+        showNotification(
+            `Connected to ${llmChatState.selectedServerName}`,
+            "success",
+        );
+    } catch (error) {
+        console.error("Connection error:", error);
+        // Display the backend error message to the user
+        showConnectionError(error.message);
+    } finally {
+        connectBtn.textContent = originalText;
+        connectBtn.disabled = false;
+    }
+}
+
+/**
+ * Build LLM config object from form inputs
+ */
+function buildLLMConfig(provider) {
+    const config = {
+        provider,
+        config: {},
+    };
+
+    if (provider === "azure_openai") {
+        const apiKey = document.getElementById("azure-api-key").value.trim();
+        const endpoint = document.getElementById("azure-endpoint").value.trim();
+        const deployment = document
+            .getElementById("azure-deployment")
+            .value.trim();
+        const apiVersion = document
+            .getElementById("azure-api-version")
+            .value.trim();
+        const temperature = document
+            .getElementById("azure-temperature")
+            .value.trim();
+
+        // Only include non-empty values
+        if (apiKey) {
+            config.config.api_key = apiKey;
+        }
+        if (endpoint) {
+            config.config.azure_endpoint = endpoint;
+        }
+        if (deployment) {
+            config.config.azure_deployment = deployment;
+        }
+        if (apiVersion) {
+            config.config.api_version = apiVersion;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+    } else if (provider === "openai") {
+        const apiKey = document.getElementById("openai-api-key").value.trim();
+        const model = document.getElementById("openai-model").value.trim();
+        const baseUrl = document.getElementById("openai-base-url").value.trim();
+        const temperature = document
+            .getElementById("openai-temperature")
+            .value.trim();
+
+        // Only include non-empty values
+        if (apiKey) {
+            config.config.api_key = apiKey;
+        }
+        if (model) {
+            config.config.model = model;
+        }
+        if (baseUrl) {
+            config.config.base_url = baseUrl;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+    } else if (provider === "anthropic") {
+        const apiKey = document
+            .getElementById("anthropic-api-key")
+            .value.trim();
+        const model = document.getElementById("anthropic-model").value.trim();
+        const temperature = document
+            .getElementById("anthropic-temperature")
+            .value.trim();
+        const maxTokens = document
+            .getElementById("anthropic-max-tokens")
+            .value.trim();
+
+        // Only include non-empty values
+        if (apiKey) {
+            config.config.api_key = apiKey;
+        }
+        if (model) {
+            config.config.model = model;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+        if (maxTokens) {
+            config.config.max_tokens = parseInt(maxTokens, 10);
+        }
+    } else if (provider === "aws_bedrock") {
+        const modelId = document
+            .getElementById("aws-bedrock-model-id")
+            .value.trim();
+        const region = document
+            .getElementById("aws-bedrock-region")
+            .value.trim();
+        const accessKeyId = document
+            .getElementById("aws-access-key-id")
+            .value.trim();
+        const secretAccessKey = document
+            .getElementById("aws-secret-access-key")
+            .value.trim();
+        const temperature = document
+            .getElementById("aws-bedrock-temperature")
+            .value.trim();
+        const maxTokens = document
+            .getElementById("aws-bedrock-max-tokens")
+            .value.trim();
+
+        // Only include non-empty values
+        if (modelId) {
+            config.config.model_id = modelId;
+        }
+        if (region) {
+            config.config.region_name = region;
+        }
+        if (accessKeyId) {
+            config.config.aws_access_key_id = accessKeyId;
+        }
+        if (secretAccessKey) {
+            config.config.aws_secret_access_key = secretAccessKey;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+        if (maxTokens) {
+            config.config.max_tokens = parseInt(maxTokens, 10);
+        }
+    } else if (provider === "watsonx") {
+        const apiKey = document.getElementById("watsonx-api-key").value.trim();
+        const url = document.getElementById("watsonx-url").value.trim();
+        const projectId = document
+            .getElementById("watsonx-project-id")
+            .value.trim();
+        const modelId = document
+            .getElementById("watsonx-model-id")
+            .value.trim();
+        const temperature = document
+            .getElementById("watsonx-temperature")
+            .value.trim();
+        const maxNewTokens = document
+            .getElementById("watsonx-max-new-tokens")
+            .value.trim();
+        const decodingMethod = document
+            .getElementById("watsonx-decoding-method")
+            .value.trim();
+
+        // Only include non-empty values
+        if (apiKey) {
+            config.config.apikey = apiKey;
+        }
+        if (url) {
+            config.config.url = url;
+        }
+        if (projectId) {
+            config.config.projectid = projectId;
+        }
+        if (modelId) {
+            config.config.modelid = modelId;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+        if (maxNewTokens) {
+            config.config.maxnewtokens = parseInt(maxNewTokens, 10);
+        }
+        if (decodingMethod) {
+            config.config.decodingmethod = decodingMethod;
+        }
+    } else if (provider === "ollama") {
+        const model = document.getElementById("ollama-model").value.trim();
+        const baseUrl = document.getElementById("ollama-base-url").value.trim();
+        const temperature = document
+            .getElementById("ollama-temperature")
+            .value.trim();
+
+        // Only include non-empty values
+        if (model) {
+            config.config.model = model;
+        }
+        if (baseUrl) {
+            config.config.base_url = baseUrl;
+        }
+        if (temperature) {
+            config.config.temperature = parseFloat(temperature);
+        }
+    }
+
+    return config;
+}
+
+/**
+ * Copy environment variables to clipboard for the specified provider
+ */
+// eslint-disable-next-line no-unused-vars
+async function copyEnvVariables(provider) {
+    const envVariables = {
+        azure: `AZURE_OPENAI_API_KEY=<api_key>
+AZURE_OPENAI_ENDPOINT=https://test-url.openai.azure.com
+AZURE_OPENAI_API_VERSION=2024-02-15-preview
+AZURE_OPENAI_DEPLOYMENT=gpt4o
+AZURE_OPENAI_MODEL=gpt4o`,
+
+        openai: `OPENAI_API_KEY=<api_key>
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1`,
+
+        anthropic: `ANTHROPIC_API_KEY=<api_key>
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_MAX_TOKENS=4096`,
+
+        aws_bedrock: `AWS_BEDROCK_MODEL_ID=anthropic.claude-v2
+AWS_BEDROCK_REGION=us-east-1
+AWS_ACCESS_KEY_ID=<optional>
+AWS_SECRET_ACCESS_KEY=<optional>`,
+
+        watsonx: `WATSONX_APIKEY=apikey
+WATSONX_URL=https://us-south.ml.cloud.ibm.com
+WATSONX_PROJECT_ID=project-id
+WATSONX_MODEL_ID=ibm/granite-13b-chat-v2
+WATSONX_TEMPERATURE=0.7`,
+
+        ollama: `OLLAMA_MODEL=llama3
+OLLAMA_BASE_URL=http://localhost:11434`,
+    };
+
+    const variables = envVariables[provider];
+
+    if (!variables) {
+        console.error("Unknown provider:", provider);
+        showErrorMessage("Unknown provider");
+        return;
+    }
+
+    try {
+        // Try modern clipboard API first
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(variables);
+            showCopySuccessNotification(provider);
+        } else {
+            // Fallback for older browsers
+            const textArea = document.createElement("textarea");
+            textArea.value = variables;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-999999px";
+            textArea.style.top = "-999999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+
+            try {
+                const successful = document.execCommand("copy");
+                if (successful) {
+                    showCopySuccessNotification(provider);
+                } else {
+                    throw new Error("Copy command failed");
+                }
+            } catch (err) {
+                console.error("Fallback copy failed:", err);
+                showErrorMessage("Failed to copy to clipboard");
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+    } catch (err) {
+        console.error("Failed to copy environment variables:", err);
+        showErrorMessage("Failed to copy to clipboard. Please copy manually.");
+    }
+}
+
+/**
+ * Show success notification when environment variables are copied
+ */
+function showCopySuccessNotification(provider) {
+    const providerNames = {
+        azure: "Azure OpenAI",
+        ollama: "Ollama",
+        openai: "OpenAI",
+    };
+
+    const displayName = providerNames[provider] || provider;
+
+    // Create notification element
+    const notification = document.createElement("div");
+    notification.className = "fixed top-4 right-4 z-50 animate-fade-in";
+    notification.innerHTML = `
+        <div class="bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="font-medium">${displayName} variables copied!</span>
+        </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    // Remove notification after 3 seconds
+    setTimeout(() => {
+        notification.style.opacity = "0";
+        notification.style.transition = "opacity 0.3s ease-out";
+        setTimeout(() => {
+            if (notification.parentNode) {
+                document.body.removeChild(notification);
+            }
+        }, 300);
+    }, 3000);
+}
+
+/**
+ * Show connection success
+ */
+function showConnectionSuccess() {
+    // Update connection status badge
+    const statusBadge = document.getElementById("llm-connection-status");
+    if (statusBadge) {
+        statusBadge.classList.remove("hidden");
+    }
+
+    // Show active tools badge using data from connection response
+    const toolsBadge = document.getElementById("llm-active-tools-badge");
+    const toolCountSpan = document.getElementById("llm-tool-count");
+    const toolListDiv = document.getElementById("llm-tool-list");
+
+    if (toolsBadge && toolCountSpan && toolListDiv) {
+        const tools = llmChatState.connectedTools || [];
+        const count = tools.length;
+
+        toolCountSpan.textContent = `${count} tool${count !== 1 ? "s" : ""}`;
+
+        // Clear and populate tool list with individual pills
+        toolListDiv.innerHTML = "";
+
+        if (count > 0) {
+            tools.forEach((toolName, index) => {
+                const pill = document.createElement("span");
+                pill.className =
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/40 dark:to-indigo-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 shadow-sm hover:shadow-md transition-all hover:scale-105";
+
+                // Tool icon
+                const icon = document.createElementNS(
+                    "http://www.w3.org/2000/svg",
+                    "svg",
+                );
+                icon.setAttribute("class", "w-3.5 h-3.5");
+                icon.setAttribute("fill", "none");
+                icon.setAttribute("stroke", "currentColor");
+                icon.setAttribute("viewBox", "0 0 24 24");
+                icon.innerHTML =
+                    '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path>';
+
+                const text = document.createElement("span");
+                text.textContent = toolName;
+
+                pill.appendChild(icon);
+                pill.appendChild(text);
+                toolListDiv.appendChild(pill);
+            });
+        } else {
+            const emptyMsg = document.createElement("div");
+            emptyMsg.className = "text-center py-4";
+            emptyMsg.innerHTML = `
+      <svg class="w-8 h-8 mx-auto text-gray-400 dark:text-gray-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path>
+      </svg>
+      <p class="text-xs text-gray-500 dark:text-gray-400">No tools available for this server</p>
+    `;
+            toolListDiv.appendChild(emptyMsg);
+        }
+
+        toolsBadge.classList.remove("hidden");
+    }
+
+    // Hide connect button, show disconnect button
+    const connectBtn = document.getElementById("llm-connect-btn");
+    const disconnectBtn = document.getElementById("llm-disconnect-btn");
+    if (connectBtn) {
+        connectBtn.classList.add("hidden");
+    }
+    if (disconnectBtn) {
+        disconnectBtn.classList.remove("hidden");
+    }
+
+    // Auto-collapse configuration
+    const configForm = document.getElementById("llm-config-form");
+    const chevron = document.getElementById("llm-config-chevron");
+    if (configForm && !configForm.classList.contains("hidden")) {
+        configForm.classList.add("hidden");
+        chevron.classList.remove("rotate-180");
+    }
+
+    // Show success message
+    showNotification(
+        `Connected to ${llmChatState.selectedServerName}`,
+        "success",
+    );
+}
+
+/**
+ * Show connection error
+ */
+/**
+ * Display connection error with proper formatting
+ */
+function showConnectionError(message) {
+    const statusDiv = document.getElementById("llm-config-status");
+    if (statusDiv) {
+        statusDiv.className =
+            "text-sm text-red-600 dark:text-red-400 p-3 bg-red-50 dark:bg-red-900/20 rounded border border-red-200 dark:border-red-700";
+        statusDiv.innerHTML = `
+            <div class="flex items-start gap-2">
+                <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                </svg>
+                <div class="flex-1">
+                    <strong class="font-semibold">Connection Failed</strong>
+                    <p class="mt-1">${escapeHtml(message)}</p>
+                </div>
+            </div>
+        `;
+        statusDiv.classList.remove("hidden");
+    }
+}
+
+/**
+ * Disconnect from LLM chat
+ */
+// eslint-disable-next-line no-unused-vars
+async function disconnectLLMChat() {
+    if (!llmChatState.isConnected) {
+        console.warn("No active connection to disconnect");
+        return;
+    }
+
+    const disconnectBtn = document.getElementById("llm-disconnect-btn");
+    const originalText = disconnectBtn.textContent;
+    disconnectBtn.textContent = "Disconnecting...";
+    disconnectBtn.disabled = true;
+
+    try {
+        const jwtToken = getCookie("jwt_token");
+
+        // Attempt graceful disconnection
+        let response;
+        let backendError = null;
+
+        try {
+            response = await fetchWithTimeout(
+                `${window.ROOT_PATH}/llmchat/disconnect`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${jwtToken}`,
+                    },
+                    body: JSON.stringify({
+                        user_id: llmChatState.userId,
+                    }),
+                    credentials: "same-origin",
+                },
+                10000,
+            ); // Shorter timeout for disconnect
+        } catch (fetchError) {
+            console.warn(
+                "Disconnect request failed, cleaning up locally:",
+                fetchError,
+            );
+            backendError = fetchError.message;
+            // Continue with local cleanup even if server request fails
+        }
+
+        // Parse response if available
+        let disconnectStatus = "unknown";
+        if (response) {
+            if (response.ok) {
+                try {
+                    const result = await response.json();
+                    disconnectStatus = result.status || "disconnected";
+
+                    if (result.warning) {
+                        console.warn("Disconnect warning:", result.warning);
+                    }
+                } catch (parseError) {
+                    console.warn("Could not parse disconnect response");
+                }
+            } else {
+                // Extract backend error message
+                try {
+                    const errorData = await response.json();
+                    if (errorData.detail) {
+                        backendError = errorData.detail;
+                    }
+                } catch (parseError) {
+                    backendError = `HTTP ${response.status}`;
+                }
+                console.warn(
+                    `Disconnect returned error: ${backendError}, cleaning up locally`,
+                );
+            }
+        }
+
+        // Always update local state regardless of server response
+        llmChatState.isConnected = false;
+        llmChatState.messageHistory = [];
+        llmChatState.connectedTools = [];
+        llmChatState.toolCount = 0;
+        llmChatState.serverToken = "";
+
+        // Update UI
+        const statusBadge = document.getElementById("llm-connection-status");
+        if (statusBadge) {
+            statusBadge.classList.add("hidden");
+        }
+
+        const toolsBadge = document.getElementById("llm-active-tools-badge");
+        if (toolsBadge) {
+            toolsBadge.classList.add("hidden");
+        }
+
+        const connectBtn = document.getElementById("llm-connect-btn");
+        if (connectBtn) {
+            connectBtn.classList.remove("hidden");
+        }
+        if (disconnectBtn) {
+            disconnectBtn.classList.add("hidden");
+        }
+
+        // Hide chat input
+        const chatInput = document.getElementById("chat-input-container");
+        if (chatInput) {
+            chatInput.classList.add("hidden");
+            document.getElementById("chat-input").disabled = true;
+            document.getElementById("chat-send-btn").disabled = true;
+        }
+
+        // Clear messages
+        clearChatMessages();
+
+        // Show appropriate notification
+        if (backendError) {
+            showNotification(
+                `Disconnected (server error: ${backendError})`,
+                "warning",
+            );
+        } else if (disconnectStatus === "no_active_session") {
+            showNotification("Already disconnected", "info");
+        } else if (disconnectStatus === "disconnected_with_errors") {
+            showNotification("Disconnected (with cleanup warnings)", "warning");
+        } else {
+            showNotification("Disconnected successfully", "info");
+        }
+    } catch (error) {
+        console.error("Unexpected disconnection error:", error);
+
+        // Force cleanup even on error
+        llmChatState.isConnected = false;
+        llmChatState.messageHistory = [];
+        llmChatState.connectedTools = [];
+        llmChatState.toolCount = 0;
+
+        // Display backend error if available
+        showErrorMessage(
+            `Disconnection error: ${error.message}. Local session cleared.`,
+        );
+    } finally {
+        disconnectBtn.textContent = originalText;
+        disconnectBtn.disabled = false;
+    }
+}
+
+/**
+ * Send chat message
+ */
+async function sendChatMessage(event) {
+    event.preventDefault();
+
+    const input = document.getElementById("chat-input");
+    const message = input.value.trim();
+
+    if (!message) {
+        return;
+    }
+
+    if (!llmChatState.isConnected) {
+        showErrorMessage("Please connect to a server first");
+        return;
+    }
+
+    // Add user message to chat
+    appendChatMessage("user", message);
+
+    // Clear input
+    input.value = "";
+    input.style.height = "auto";
+
+    // Disable input while processing
+    input.disabled = true;
+    document.getElementById("chat-send-btn").disabled = true;
+
+    let assistantMsgId = null;
+    let reader = null;
+
+    try {
+        const jwtToken = getCookie("jwt_token");
+
+        // Create assistant message placeholder for streaming
+        assistantMsgId = appendChatMessage("assistant", "", true);
+
+        // Make request with timeout handling
+        let response;
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+            response = await fetch(`${window.ROOT_PATH}/llmchat/chat`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${jwtToken}`,
+                },
+                body: JSON.stringify({
+                    user_id: llmChatState.userId,
+                    message,
+                    streaming: true,
+                }),
+                credentials: "same-origin",
+                signal: controller.signal,
+            });
+
+            clearTimeout(timeoutId);
+        } catch (fetchError) {
+            if (fetchError.name === "AbortError") {
+                throw new Error(
+                    "Request timed out. The response took too long.",
+                );
+            }
+            throw new Error(`Network error: ${fetchError.message}`);
+        }
+
+        // Handle HTTP errors - extract backend error message
+        if (!response.ok) {
+            let errorMessage = `Chat request failed (HTTP ${response.status})`;
+
+            try {
+                const errorData = await response.json();
+                if (errorData.detail) {
+                    // Use backend error message directly
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                console.warn("Could not parse error response");
+            }
+
+            throw new Error(errorMessage);
+        }
+
+        // Validate response has body stream
+        if (!response.body) {
+            throw new Error("No response stream received from server");
+        }
+
+        // Handle streaming SSE response
+        reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulatedText = "";
+        let hasReceivedData = false;
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                hasReceivedData = true;
+                buffer += decoder.decode(value, { stream: true });
+
+                // Process complete SSE events (separated by blank line)
+                let boundary;
+                while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+                    const rawEvent = buffer.slice(0, boundary).trim();
+                    buffer = buffer.slice(boundary + 2);
+
+                    if (!rawEvent) {
+                        continue;
+                    }
+
+                    let eventType = "message";
+                    const dataLines = [];
+
+                    for (const line of rawEvent.split("\n")) {
+                        if (line.startsWith("event:")) {
+                            eventType = line.slice(6).trim();
+                        } else if (line.startsWith("data:")) {
+                            dataLines.push(line.slice(5).trim());
+                        }
+                    }
+
+                    let payload = {};
+                    const dataStr = dataLines.join("");
+
+                    try {
+                        payload = dataStr ? JSON.parse(dataStr) : {};
+                    } catch (parseError) {
+                        console.warn(
+                            "Failed to parse SSE data:",
+                            dataStr,
+                            parseError,
+                        );
+                        continue;
+                    }
+
+                    // Handle different event types
+                    try {
+                        switch (eventType) {
+                            case "token": {
+                                const text = payload.content;
+                                if (text) {
+                                    accumulatedText += text;
+                                    // Process and render with think tags
+                                    updateChatMessageWithThinkTags(
+                                        assistantMsgId,
+                                        accumulatedText,
+                                    );
+                                }
+                                break;
+                            }
+                            case "tool_start":
+                            case "tool_end":
+                            case "tool_error":
+                                addToolEventToCard(
+                                    assistantMsgId,
+                                    eventType,
+                                    payload,
+                                );
+                                break;
+
+                            case "final":
+                                if (payload.tool_used) {
+                                    setToolUsedSummary(
+                                        assistantMsgId,
+                                        true,
+                                        payload.tools,
+                                    );
+                                }
+                                setTimeout(scrollChatToBottom, 50);
+                                break;
+
+                            case "error": {
+                                // Handle server-sent error events from backend
+                                const errorMsg =
+                                    payload.error ||
+                                    "An error occurred during processing";
+                                const isRecoverable =
+                                    payload.recoverable !== false;
+
+                                // Display error in the assistant message
+                                updateChatMessage(
+                                    assistantMsgId,
+                                    `❌ Error: ${errorMsg}`,
+                                );
+
+                                if (!isRecoverable) {
+                                    // For non-recoverable errors, suggest reconnection
+                                    appendChatMessage(
+                                        "system",
+                                        "⚠️ Connection lost. Please reconnect to continue.",
+                                    );
+                                    llmChatState.isConnected = false;
+
+                                    // Update UI to show disconnected state
+                                    const connectBtn =
+                                        document.getElementById(
+                                            "llm-connect-btn",
+                                        );
+                                    const disconnectBtn =
+                                        document.getElementById(
+                                            "llm-disconnect-btn",
+                                        );
+                                    if (connectBtn) {
+                                        connectBtn.classList.remove("hidden");
+                                    }
+                                    if (disconnectBtn) {
+                                        disconnectBtn.classList.add("hidden");
+                                    }
+                                }
+                                break;
+                            }
+                            default:
+                                console.warn("Unknown event type:", eventType);
+                                break;
+                        }
+                    } catch (eventError) {
+                        console.error(
+                            `Error handling event ${eventType}:`,
+                            eventError,
+                        );
+                        // Continue processing other events
+                    }
+                }
+
+                setTimeout(scrollChatToBottom, 100);
+            }
+        } catch (streamError) {
+            console.error("Stream reading error:", streamError);
+            throw new Error(`Stream error: ${streamError.message}`);
+        }
+
+        // Validate we received some data
+        if (!hasReceivedData) {
+            throw new Error("No data received from server");
+        }
+
+        // Mark streaming as complete
+        markMessageComplete(assistantMsgId);
+    } catch (error) {
+        console.error("Chat error:", error);
+
+        // Display backend error message to user
+        const errorMsg = error.message || "An unexpected error occurred";
+        appendChatMessage("system", `❌ ${errorMsg}`);
+
+        // If we have a partial assistant message, mark it as complete
+        if (assistantMsgId) {
+            markMessageComplete(assistantMsgId);
+        }
+    } finally {
+        // Clean up reader if it exists
+        if (reader) {
+            try {
+                await reader.cancel();
+            } catch (cancelError) {
+                console.warn("Error canceling reader:", cancelError);
+            }
+        }
+
+        // Re-enable input
+        input.disabled = false;
+        document.getElementById("chat-send-btn").disabled = false;
+        input.focus();
+    }
+}
+
+/**
+ * Parse content with <think> tags and separate thinking from final answer
+ * Returns: { thinkingSteps: [{content: string}], finalAnswer: string, rawContent: string }
+ */
+function parseThinkTags(content) {
+    const thinkingSteps = [];
+    let finalAnswer = "";
+    const rawContent = content;
+
+    // Extract all <think>...</think> blocks
+    const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+    let match;
+    // let lastIndex = 0;
+
+    while ((match = thinkRegex.exec(content)) !== null) {
+        const thinkContent = match[1].trim();
+        if (thinkContent) {
+            thinkingSteps.push({ content: thinkContent });
+        }
+        // lastIndex = match.index + match[0].length;
+    }
+
+    // Remove all <think> tags to get final answer
+    finalAnswer = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+    return { thinkingSteps, finalAnswer, rawContent };
+}
+
+/**
+ * Update chat message with think tags support
+ * Renders thinking steps in collapsible UI and final answer separately
+ */
+function updateChatMessageWithThinkTags(messageId, content) {
+    const messageDiv = document.getElementById(messageId);
+    if (!messageDiv) {
+        return;
+    }
+
+    const contentEl = messageDiv.querySelector(".message-content");
+    if (!contentEl) {
+        return;
+    }
+
+    // Parse content for think tags
+    const { thinkingSteps, finalAnswer } = parseThinkTags(content);
+
+    // Clear existing content
+    contentEl.innerHTML = "";
+
+    // Render thinking steps if present
+    if (thinkingSteps.length > 0) {
+        const thinkingContainer = createThinkingUI(thinkingSteps);
+        contentEl.appendChild(thinkingContainer);
+    }
+
+    // Render final answer
+    if (finalAnswer) {
+        const answerDiv = document.createElement("div");
+        answerDiv.className = "final-answer-content";
+        answerDiv.textContent = finalAnswer;
+        contentEl.appendChild(answerDiv);
+    }
+
+    // Throttle scroll during streaming
+    if (!scrollThrottle) {
+        scrollChatToBottom();
+        scrollThrottle = setTimeout(() => {
+            scrollThrottle = null;
+        }, 100);
+    }
+}
+
+/**
+ * Create the thinking UI component with collapsible steps
+ */
+function createThinkingUI(thinkingSteps) {
+    const container = document.createElement("div");
+    container.className = "thinking-container";
+
+    // Create header with icon and label
+    const header = document.createElement("div");
+    header.className = "thinking-header";
+    header.innerHTML = `
+        <div class="thinking-header-content">
+            <svg class="thinking-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+            </svg>
+            <span class="thinking-label">Thinking</span>
+            <span class="thinking-count">${thinkingSteps.length} step${thinkingSteps.length !== 1 ? "s" : ""}</span>
+        </div>
+        <button class="thinking-toggle" aria-label="Toggle thinking steps">
+            <svg class="thinking-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
+        </button>
+    `;
+
+    // Create collapsible content
+    const content = document.createElement("div");
+    content.className = "thinking-content collapsed";
+
+    // Add each thinking step
+    thinkingSteps.forEach((step, index) => {
+        const stepDiv = document.createElement("div");
+        stepDiv.className = "thinking-step";
+        stepDiv.innerHTML = `
+            <div class="thinking-step-number">
+                <span>${index + 1}</span>
+            </div>
+            <div class="thinking-step-text">${escapeHtml(step.content)}</div>
+        `;
+        content.appendChild(stepDiv);
+    });
+
+    // Toggle functionality
+    const toggleBtn = header.querySelector(".thinking-toggle");
+    const chevron = header.querySelector(".thinking-chevron");
+
+    toggleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isCollapsed = content.classList.contains("collapsed");
+
+        if (isCollapsed) {
+            content.classList.remove("collapsed");
+            chevron.style.transform = "rotate(180deg)";
+        } else {
+            content.classList.add("collapsed");
+            chevron.style.transform = "rotate(0deg)";
+        }
+
+        // Scroll after animation
+        setTimeout(scrollChatToBottom, 200);
+    });
+
+    container.appendChild(header);
+    container.appendChild(content);
+
+    return container;
+}
+
+/**
+ * Helper to escape HTML for safe rendering
+ */
+function escapeHtmlChat(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+/**
+ * Append chat message to UI
+ */
+// Append chat message to UI
+// Append chat message to UI
+// Append chat message to UI
+// function appendChatMessage(role, content, isStreaming = false) {
+//     const container = document.getElementById('chat-messages-container');
+//     const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+//     const messageDiv = document.createElement('div');
+//     messageDiv.id = messageId;
+//     messageDiv.className = `chat-message ${role}-message`;
+
+//     if (role === 'user') {
+//         messageDiv.innerHTML = `
+//             <div class="flex justify-end" style="margin: 0;">
+//                 <div class="max-w-80 rounded-lg bg-indigo-600 text-white" style="padding: 6px 12px;">
+//                     <div class="text-sm whitespace-pre-wrap" style="margin: 0; padding: 0; line-height: 1.3;">${escapeHtml(content)}</div>
+//                 </div>
+//             </div>
+//         `;
+//     } else if (role === 'assistant') {
+//         messageDiv.innerHTML = `
+//             <div class="flex justify-start" style="margin: 0;">
+//                 <div class="max-w-80 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-gray-100" style="padding: 6px 12px;">
+//                     <div class="text-sm whitespace-pre-wrap message-content" style="margin: 0; padding: 0; line-height: 1.3; display: inline-block;">${escapeHtml(content)}</div>
+//                     ${isStreaming ? '<span class="streaming-indicator inline-block ml-2"></span>' : ''}
+//                 </div>
+//             </div>
+//         `;
+//     } else if (role === 'system') {
+//         messageDiv.innerHTML = `
+//             <div class="flex justify-center">
+//                 <div class="rounded-lg bg-yellow-50 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 text-xs" style="padding: 4px 10px; margin: 0;">
+//                     ${escapeHtml(content)}
+//                 </div>
+//             </div>
+//         `;
+//     }
+
+//     container.appendChild(messageDiv);
+//     scrollChatToBottom();
+//     return messageId;
+// }
+
+function appendChatMessage(role, content, isStreaming = false) {
+    const container = document.getElementById("chat-messages-container");
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    const messageDiv = document.createElement("div");
+    messageDiv.id = messageId;
+    messageDiv.className = `chat-message ${role}-message`;
+    messageDiv.style.marginBottom = "6px"; // compact spacing between messages
+
+    if (role === "user") {
+        messageDiv.innerHTML = `
+            <div class="flex justify-end px-2">
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl px-4 py-2 max-w-xs shadow-sm text-sm whitespace-pre-wrap flex items-end gap-1">
+                    <div class="message-content">${escapeHtmlChat(content)}</div>
+                </div>
+            </div>
+        `;
+    } else if (role === "assistant") {
+        messageDiv.innerHTML = `
+            <div class="flex justify-start px-2">
+                <div class="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-2xl px-4 py-2 max-w-xs shadow-sm text-sm whitespace-pre-wrap flex items-end gap-1">
+                    <div class="message-content">${escapeHtmlChat(content)}</div>
+                    ${isStreaming ? '<span class="streaming-indicator w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>' : ""}
+                </div>
+            </div>
+        `;
+    } else if (role === "system") {
+        messageDiv.innerHTML = `
+            <div class="flex justify-center px-2">
+                <div class="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-100 text-xs px-3 py-1 rounded-md shadow-sm">
+                    ${escapeHtmlChat(content)}
+                </div>
+            </div>
+        `;
+    }
+
+    container.appendChild(messageDiv);
+    scrollChatToBottom();
+    return messageId;
+}
+
+/**
+ * Update chat message content (for streaming)
+ */
+let scrollThrottle = null;
+function updateChatMessage(messageId, content) {
+    const messageDiv = document.getElementById(messageId);
+    if (messageDiv) {
+        const contentEl = messageDiv.querySelector(".message-content");
+        if (contentEl) {
+            // Store raw content for final processing
+            contentEl.setAttribute("data-raw-content", content);
+            contentEl.textContent = content;
+
+            // Throttle scroll during streaming
+            if (!scrollThrottle) {
+                scrollChatToBottom();
+                scrollThrottle = setTimeout(() => {
+                    scrollThrottle = null;
+                }, 100);
+            }
+        }
+    }
+}
+
+/**
+ * Mark message as complete (remove streaming indicator)
+ */
+function markMessageComplete(messageId) {
+    const messageDiv = document.getElementById(messageId);
+    if (messageDiv) {
+        const indicator = messageDiv.querySelector(".streaming-indicator");
+        if (indicator) {
+            indicator.remove();
+        }
+
+        // Ensure final render with think tags
+        const contentEl = messageDiv.querySelector(".message-content");
+        if (contentEl && contentEl.textContent) {
+            // Re-parse one final time to ensure complete rendering
+            const fullContent =
+                contentEl.getAttribute("data-raw-content") ||
+                contentEl.textContent;
+            if (fullContent.includes("<think>")) {
+                const { thinkingSteps, finalAnswer } =
+                    parseThinkTags(fullContent);
+                contentEl.innerHTML = "";
+
+                if (thinkingSteps.length > 0) {
+                    const thinkingContainer = createThinkingUI(thinkingSteps);
+                    contentEl.appendChild(thinkingContainer);
+                }
+
+                if (finalAnswer) {
+                    const answerDiv = document.createElement("div");
+                    answerDiv.className = "final-answer-content";
+                    answerDiv.textContent = finalAnswer;
+                    contentEl.appendChild(answerDiv);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Get or create a tool-events card positioned above the assistant message.
+ * The card is a sibling of the message div, not nested inside.
+ */
+function getOrCreateToolCard(messageId) {
+    const messageDiv = document.getElementById(messageId);
+    if (!messageDiv) {
+        return null;
+    }
+
+    // Check if card already exists as a sibling
+    let card = messageDiv.previousElementSibling;
+    if (card && card.classList.contains("tool-events-card")) {
+        return card;
+    }
+
+    // Create a new card
+    card = document.createElement("div");
+    card.className =
+        "tool-events-card mb-2 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700";
+
+    const header = document.createElement("div");
+    header.className = "flex items-center justify-between mb-2";
+
+    const title = document.createElement("div");
+    title.className =
+        "font-semibold text-sm text-blue-800 dark:text-blue-200 flex items-center gap-2";
+    title.innerHTML = `
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+    </svg>
+    <span>Tool Invocations</span>
+  `;
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.className =
+        "text-xs text-blue-600 dark:text-blue-300 hover:underline";
+    toggleBtn.textContent = "Hide";
+    toggleBtn.onclick = () => {
+        const body = card.querySelector(".tool-events-body");
+        if (body.classList.contains("hidden")) {
+            body.classList.remove("hidden");
+            toggleBtn.textContent = "Hide";
+        } else {
+            body.classList.add("hidden");
+            toggleBtn.textContent = "Show";
+        }
+    };
+
+    header.appendChild(title);
+    header.appendChild(toggleBtn);
+    card.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "tool-events-body space-y-2";
+    card.appendChild(body);
+
+    // Insert card before the message div
+    messageDiv.parentElement.insertBefore(card, messageDiv);
+
+    return card;
+}
+
+/**
+ * Add a tool event row to the tool card.
+ */
+function addToolEventToCard(messageId, eventType, payload) {
+    const card = getOrCreateToolCard(messageId);
+    if (!card) {
+        return;
+    }
+
+    const body = card.querySelector(".tool-events-body");
+
+    const row = document.createElement("div");
+    row.className =
+        "text-xs p-2 rounded bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700";
+
+    let icon = "";
+    let text = "";
+    let colorClass = "";
+
+    if (eventType === "tool_start") {
+        icon =
+            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+        colorClass = "text-green-700 dark:text-green-400";
+        text = `<strong>Started:</strong> ${escapeHtmlChat(payload.tool || payload.id || "unknown")}`;
+        if (payload.input) {
+            text += `<br><span class="text-gray-600 dark:text-gray-400">Input: ${escapeHtmlChat(JSON.stringify(payload.input))}</span>`;
+        }
+    } else if (eventType === "tool_end") {
+        icon =
+            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+        colorClass = "text-blue-700 dark:text-blue-400";
+        text = `<strong>Completed:</strong> ${escapeHtmlChat(payload.tool || payload.id || "unknown")}`;
+        if (payload.output) {
+            const out =
+                typeof payload.output === "string"
+                    ? payload.output
+                    : JSON.stringify(payload.output);
+            text += `<br><span class="text-gray-600 dark:text-gray-400">Output: ${escapeHtmlChat(out)}</span>`;
+        }
+    } else if (eventType === "tool_error") {
+        icon =
+            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+        colorClass = "text-red-700 dark:text-red-400";
+        text = `<strong>Error:</strong> ${escapeHtmlChat(payload.error || payload.tool || payload.id || "unknown")}`;
+    }
+
+    row.innerHTML = `<div class="flex items-start gap-2 ${colorClass}">${icon}<div>${text}</div></div>`;
+    body.appendChild(row);
+}
+
+/**
+ * Update or create a "tools used" summary badge on the tool card when final event arrives.
+ */
+function setToolUsedSummary(messageId, used, toolsList) {
+    const card = getOrCreateToolCard(messageId);
+    if (!card) {
+        return;
+    }
+
+    let badge = card.querySelector(".tool-summary-badge");
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.className =
+            "tool-summary-badge mt-2 pt-2 border-t border-blue-200 dark:border-blue-700 text-xs font-medium";
+        card.appendChild(badge);
+    }
+
+    if (used && toolsList && toolsList.length > 0) {
+        badge.className =
+            "tool-summary-badge mt-2 pt-2 border-t border-blue-200 dark:border-blue-700 text-xs font-medium text-green-700 dark:text-green-400";
+        badge.textContent = `✓ Tools used: ${toolsList.join(", ")}`;
+    } else {
+        badge.className =
+            "tool-summary-badge mt-2 pt-2 border-t border-blue-200 dark:border-blue-700 text-xs font-medium text-gray-600 dark:text-gray-400";
+        badge.textContent = "No tools invoked";
+    }
+}
+
+/**
+ * Clear all chat messages
+ */
+function clearChatMessages() {
+    const container = document.getElementById("chat-messages-container");
+    if (container) {
+        container.innerHTML = `
+      <div id="chat-welcome-message" class="flex items-center justify-center h-full">
+        <div class="text-center text-gray-500 dark:text-gray-400">
+          <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+          </svg>
+          <p class="mt-4 text-lg font-medium">Select a server and connect to start chatting</p>
+          <p class="mt-2 text-sm">Choose a virtual server from the left and configure your LLM settings</p>
+        </div>
+      </div>
+    `;
+    }
+}
+
+/**
+ * Scroll chat to bottom
+ */
+function scrollChatToBottom() {
+    const container = document.getElementById("chat-messages-container");
+    if (container) {
+        requestAnimationFrame(() => {
+            // Use instant scroll during streaming for better UX
+            container.scrollTop = container.scrollHeight;
+        });
+    }
+}
+
+/**
+ * Handle Enter key in chat input (send on Enter, new line on Shift+Enter)
+ */
+// eslint-disable-next-line no-unused-vars
+function handleChatInputKeydown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage(event);
+    }
+}
+
+function initializeChatInputResize() {
+    const chatInput = document.getElementById("chat-input");
+    if (chatInput) {
+        chatInput.addEventListener("input", function () {
+            this.style.height = "auto";
+            this.style.height = Math.min(this.scrollHeight, 120) + "px";
+        });
+
+        // Reset height when message is sent
+        const form = document.getElementById("chat-input-form");
+        if (form) {
+            form.addEventListener("submit", () => {
+                setTimeout(() => {
+                    chatInput.style.height = "auto";
+                }, 0);
+            });
+        }
+    }
+}
+/**
+ * Perform server-side search for tools and update the tool list
+ */
+async function serverSideToolSearch(searchTerm) {
+    const container = document.getElementById("associatedTools");
+    const noResultsMessage = safeGetElement("noToolsMessage", true);
+    const searchQuerySpan = safeGetElement("searchQuery", true);
+
+    if (!container) {
+        console.error("associatedTools container not found");
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML = `
+        <div class="text-center py-4">
+            <svg class="animate-spin h-5 w-5 text-indigo-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-sm text-gray-500">Searching tools...</p>
+        </div>
+    `;
+
+    if (searchTerm.trim() === "") {
+        // If search term is empty, reload the default tool list
+        try {
+            const response = await fetch(
+                `${window.ROOT_PATH}/admin/tools/partial?page=1&per_page=50&render=selector`,
+            );
+            if (response.ok) {
+                const html = await response.text();
+                container.innerHTML = html;
+
+                // Hide no results message
+                if (noResultsMessage) {
+                    noResultsMessage.style.display = "none";
+                }
+
+                // Update tool mapping if needed
+                updateToolMapping(container);
+            } else {
+                container.innerHTML =
+                    '<div class="text-center py-4 text-red-600">Failed to load tools</div>';
+            }
+        } catch (error) {
+            console.error("Error loading tools:", error);
+            container.innerHTML =
+                '<div class="text-center py-4 text-red-600">Error loading tools</div>';
+        }
+        return;
+    }
+
+    try {
+        // Call the new search API
+        const response = await fetch(
+            `${window.ROOT_PATH}/admin/tools/search?q=${encodeURIComponent(searchTerm)}&limit=100`,
+        );
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.tools && data.tools.length > 0) {
+            // Create HTML for search results
+            let searchResultsHtml = "";
+            data.tools.forEach((tool) => {
+                // Create a label element similar to the ones in tools_selector_items.html
+                // Use the same name priority as the template: displayName or customName or original_name
+                const displayName =
+                    tool.display_name ||
+                    tool.custom_name ||
+                    tool.name ||
+                    tool.id;
+
+                searchResultsHtml += `
+                    <label
+                        class="flex items-center space-x-3 text-gray-700 dark:text-gray-300 mb-2 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900 rounded-md p-1 tool-item"
+                        data-tool-id="${escapeHtml(tool.id)}"
+                    >
+                        <input
+                            type="checkbox"
+                            name="associatedTools"
+                            value="${escapeHtml(tool.id)}"
+                            data-tool-name="${escapeHtml(displayName)}"
+                            class="tool-checkbox form-checkbox h-5 w-5 text-indigo-600 dark:bg-gray-800 dark:border-gray-600"
+                        />
+                        <span class="select-none">${escapeHtml(displayName)}</span>
+                    </label>
+                `;
+            });
+
+            container.innerHTML = searchResultsHtml;
+
+            // Update tool mapping with search results
+            updateToolMapping(container);
+
+            // Hide no results message
+            if (noResultsMessage) {
+                noResultsMessage.style.display = "none";
+            }
+        } else {
+            // Show no results message
+            container.innerHTML = "";
+            if (noResultsMessage) {
+                if (searchQuerySpan) {
+                    searchQuerySpan.textContent = searchTerm;
+                }
+                noResultsMessage.style.display = "block";
+            }
+        }
+    } catch (error) {
+        console.error("Error searching tools:", error);
+        container.innerHTML =
+            '<div class="text-center py-4 text-red-600">Error searching tools</div>';
+
+        // Hide no results message in case of error
+        if (noResultsMessage) {
+            noResultsMessage.style.display = "none";
+        }
+    }
+}
+
+/**
+ * Update the tool mapping with tools in the given container
+ */
+function updateToolMapping(container) {
+    if (!window.toolMapping) {
+        window.toolMapping = {};
+    }
+
+    const checkboxes = container.querySelectorAll(
+        'input[name="associatedTools"]',
+    );
+    checkboxes.forEach((checkbox) => {
+        const toolId = checkbox.value;
+        const toolName = checkbox.getAttribute("data-tool-name");
+        if (toolId && toolName) {
+            window.toolMapping[toolId] = toolName;
+        }
+    });
+}
+
+/**
+ * Perform server-side search for prompts and update the prompt list
+ */
+async function serverSidePromptSearch(searchTerm) {
+    const container = document.getElementById("associatedPrompts");
+    const noResultsMessage = safeGetElement("noPromptsMessage", true);
+    const searchQuerySpan = safeGetElement("searchPromptsQuery", true);
+
+    if (!container) {
+        console.error("associatedPrompts container not found");
+        return;
+    }
+
+    // Show loading state
+    container.innerHTML = `
+        <div class="text-center py-4">
+            <svg class="animate-spin h-5 w-5 text-purple-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-sm text-gray-500">Searching prompts...</p>
+        </div>
+    `;
+
+    if (searchTerm.trim() === "") {
+        // If search term is empty, reload the default prompt selector
+        try {
+            const response = await fetch(
+                `${window.ROOT_PATH}/admin/prompts/partial?page=1&per_page=50&render=selector`,
+            );
+            if (response.ok) {
+                const html = await response.text();
+                container.innerHTML = html;
+
+                // Hide no results message
+                if (noResultsMessage) {
+                    noResultsMessage.style.display = "none";
+                }
+
+                // Initialize prompt mapping if needed
+                initPromptSelect(
+                    "associatedPrompts",
+                    "selectedPromptsPills",
+                    "selectedPromptsWarning",
+                    6,
+                    "selectAllPromptsBtn",
+                    "clearAllPromptsBtn",
+                );
+            } else {
+                container.innerHTML =
+                    '<div class="text-center py-4 text-red-600">Failed to load prompts</div>';
+            }
+        } catch (error) {
+            console.error("Error loading prompts:", error);
+            container.innerHTML =
+                '<div class="text-center py-4 text-red-600">Error loading prompts</div>';
+        }
+        return;
+    }
+
+    try {
+        const response = await fetch(
+            `${window.ROOT_PATH}/admin/prompts/search?q=${encodeURIComponent(searchTerm)}&limit=100`,
+        );
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.prompts && data.prompts.length > 0) {
+            let searchResultsHtml = "";
+            data.prompts.forEach((prompt) => {
+                const displayName = prompt.name || prompt.id;
+                searchResultsHtml += `
+                    <label
+                        class="flex items-center space-x-3 text-gray-700 dark:text-gray-300 mb-2 cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-900 rounded-md p-1 prompt-item"
+                        data-prompt-id="${escapeHtml(prompt.id)}"
+                    >
+                        <input
+                            type="checkbox"
+                            name="associatedPrompts"
+                            value="${escapeHtml(prompt.id)}"
+                            data-prompt-name="${escapeHtml(displayName)}"
+                            class="prompt-checkbox form-checkbox h-5 w-5 text-purple-600 dark:bg-gray-800 dark:border-gray-600"
+                        />
+                        <span class="select-none">${escapeHtml(displayName)}</span>
+                    </label>
+                `;
+            });
+
+            container.innerHTML = searchResultsHtml;
+
+            // Initialize prompt select mapping
+            initPromptSelect(
+                "associatedPrompts",
+                "selectedPromptsPills",
+                "selectedPromptsWarning",
+                6,
+                "selectAllPromptsBtn",
+                "clearAllPromptsBtn",
+            );
+
+            if (noResultsMessage) {
+                noResultsMessage.style.display = "none";
+            }
+        } else {
+            container.innerHTML = "";
+            if (noResultsMessage) {
+                if (searchQuerySpan) {
+                    searchQuerySpan.textContent = searchTerm;
+                }
+                noResultsMessage.style.display = "block";
+            }
+        }
+    } catch (error) {
+        console.error("Error searching prompts:", error);
+        container.innerHTML =
+            '<div class="text-center py-4 text-red-600">Error searching prompts</div>';
+        if (noResultsMessage) {
+            noResultsMessage.style.display = "none";
+        }
+    }
+}
+
+// Add CSS for streaming indicator animation
+const style = document.createElement("style");
+style.textContent = `
+  .streaming-indicator {
+    animation: blink 1s infinite;
+  }
+
+  @keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+  }
+
+  #chat-input {
+    max-height: 120px;
+    overflow-y: auto;
+  }
+`;
+document.head.appendChild(style);
+
+// ============================================================================
+// CA Certificate Validation Functions
+// ============================================================================
+
+/**
+ * Validate CA certificate file on upload (supports multiple files)
+ * @param {Event} event - The file input change event
+ */
+async function validateCACertFiles(event) {
+    const files = Array.from(event.target.files);
+    const feedbackEl = document.getElementById("ca-certificate-feedback");
+
+    if (!files.length) {
+        feedbackEl.textContent = "No files selected.";
+        return;
+    }
+
+    // Check file size (max 10MB for cert files)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    const oversizedFiles = files.filter((f) => f.size > maxSize);
+    if (oversizedFiles.length > 0) {
+        if (feedbackEl) {
+            feedbackEl.innerHTML = `
+                <div class="flex items-center text-red-600">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span>Certificate file(s) too large. Maximum size is 10MB per file.</span>
+                </div>
+            `;
+            feedbackEl.className = "mt-2 text-sm";
+        }
+        event.target.value = "";
+        return;
+    }
+
+    // Check file extensions
+    const validExtensions = [".pem", ".crt", ".cer", ".cert"];
+    const invalidFiles = files.filter((file) => {
+        const fileName = file.name.toLowerCase();
+        return !validExtensions.some((ext) => fileName.endsWith(ext));
+    });
+
+    if (invalidFiles.length > 0) {
+        if (feedbackEl) {
+            feedbackEl.innerHTML = `
+                <div class="flex items-center text-red-600">
+                    <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    <span>Invalid file type. Please upload valid certificate files (.pem, .crt, .cer, .cert)</span>
+                </div>
+            `;
+            feedbackEl.className = "mt-2 text-sm";
+        }
+        event.target.value = "";
+        return;
+    }
+
+    // Read and validate all files
+    const certResults = [];
+    for (const file of files) {
+        try {
+            const content = await readFileAsync(file);
+            const isValid = isValidCertificate(content);
+            const certInfo = isValid ? parseCertificateInfo(content) : null;
+
+            certResults.push({
+                file,
+                content,
+                isValid,
+                certInfo,
+            });
+        } catch (error) {
+            certResults.push({
+                file,
+                content: null,
+                isValid: false,
+                certInfo: null,
+                error: error.message,
+            });
+        }
+    }
+
+    // Display per-file validation results
+    displayCertValidationResults(certResults, feedbackEl);
+
+    // If all valid, order and concatenate
+    const allValid = certResults.every((r) => r.isValid);
+    if (allValid) {
+        const orderedCerts = orderCertificateChain(certResults);
+        const concatenated = orderedCerts
+            .map((r) => r.content.trim())
+            .join("\n");
+
+        // Store concatenated result in a hidden field
+        let hiddenInput = document.getElementById(
+            "ca_certificate_concatenated",
+        );
+        if (!hiddenInput) {
+            hiddenInput = document.createElement("input");
+            hiddenInput.type = "hidden";
+            hiddenInput.id = "ca_certificate_concatenated";
+            hiddenInput.name = "ca_certificate";
+            event.target.form.appendChild(hiddenInput);
+        }
+        hiddenInput.value = concatenated;
+
+        // Update drop zone
+        updateDropZoneWithFiles(files);
+    } else {
+        event.target.value = "";
+    }
+}
+
+/**
+ * Helper function to read file as text asynchronously
+ * @param {File} file - The file to read
+ * @returns {Promise<string>} - Promise resolving to file content
+ */
+function readFileAsync(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error("Error reading file"));
+        reader.readAsText(file);
+    });
+}
+
+/**
+ * Parse certificate information to determine if it's self-signed (root CA)
+ * @param {string} content - PEM certificate content
+ * @returns {Object} - Certificate info with isRoot flag
+ */
+function parseCertificateInfo(content) {
+    // Basic heuristic: check if Subject and Issuer appear the same
+    // In a real implementation, you'd parse the ASN.1 structure properly
+    const subjectMatch = content.match(/Subject:([^\n]+)/i);
+    const issuerMatch = content.match(/Issuer:([^\n]+)/i);
+
+    // If we can't parse, assume it's an intermediate
+    if (!subjectMatch || !issuerMatch) {
+        return { isRoot: false };
+    }
+
+    const subject = subjectMatch[1].trim();
+    const issuer = issuerMatch[1].trim();
+
+    return {
+        isRoot: subject === issuer,
+        subject,
+        issuer,
+    };
+}
+
+/**
+ * Order certificates in chain: root CA first, then intermediates, then leaf
+ * @param {Array} certResults - Array of certificate result objects
+ * @returns {Array} - Ordered array of certificate results
+ */
+function orderCertificateChain(certResults) {
+    const roots = certResults.filter((r) => r.certInfo && r.certInfo.isRoot);
+    const nonRoots = certResults.filter(
+        (r) => r.certInfo && !r.certInfo.isRoot,
+    );
+
+    // Simple ordering: roots first, then rest
+    // In production, you'd build a proper chain by matching issuer/subject
+    return [...roots, ...nonRoots];
+}
+
+/**
+ * Display validation results for each certificate file
+ * @param {Array} certResults - Array of validation result objects
+ * @param {HTMLElement} feedbackEl - Element to display feedback
+ */
+function displayCertValidationResults(certResults, feedbackEl) {
+    const allValid = certResults.every((r) => r.isValid);
+
+    let html = '<div class="space-y-2">';
+
+    // Overall status
+    if (allValid) {
+        html += `
+            <div class="flex items-center text-green-600 font-semibold text-lg">
+                <svg class="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>All certificates validated successfully!</span>
+            </div>
+        `;
+    } else {
+        html += `
+            <div class="flex items-center text-red-600 font-semibold text-lg">
+                <svg class="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span>Some certificates failed validation</span>
+            </div>
+        `;
+    }
+
+    // Per-file results
+    html += '<div class="mt-3 space-y-1">';
+    for (const result of certResults) {
+        const icon = result.isValid
+            ? '<svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>'
+            : '<svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+
+        const statusClass = result.isValid ? "text-gray-700" : "text-red-700";
+        const typeLabel =
+            result.certInfo && result.certInfo.isRoot ? " (Root CA)" : "";
+
+        html += `
+            <div class="flex items-center ${statusClass}">
+                ${icon}
+                <span class="ml-2">${escapeHtml(result.file.name)}${typeLabel} - ${formatFileSize(result.file.size)}</span>
+            </div>
+        `;
+    }
+    html += "</div></div>";
+
+    feedbackEl.innerHTML = html;
+    feedbackEl.className = "mt-2 text-sm";
+}
+
+/**
+ * Validate certificate content (PEM format)
+ * @param {string} content - The certificate file content
+ * @returns {boolean} - True if valid certificate
+ */
+function isValidCertificate(content) {
+    // Trim whitespace
+    content = content.trim();
+
+    // Check for PEM certificate markers
+    const beginCertPattern = /-----BEGIN CERTIFICATE-----/;
+    const endCertPattern = /-----END CERTIFICATE-----/;
+
+    if (!beginCertPattern.test(content) || !endCertPattern.test(content)) {
+        return false;
+    }
+
+    // Check for proper structure
+    const certPattern =
+        /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
+    const matches = content.match(certPattern);
+
+    if (!matches || matches.length === 0) {
+        return false;
+    }
+
+    // Validate base64 content between markers
+    for (const cert of matches) {
+        const base64Content = cert
+            .replace(/-----BEGIN CERTIFICATE-----/, "")
+            .replace(/-----END CERTIFICATE-----/, "")
+            .replace(/\s/g, "");
+
+        // Check if content is valid base64
+        if (!isValidBase64(base64Content)) {
+            return false;
+        }
+
+        // Basic length check (certificates are typically > 100 chars of base64)
+        if (base64Content.length < 100) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Check if string is valid base64
+ * @param {string} str - The string to validate
+ * @returns {boolean} - True if valid base64
+ */
+function isValidBase64(str) {
+    if (str.length === 0) {
+        return false;
+    }
+
+    // Base64 regex pattern
+    const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+    return base64Pattern.test(str);
+}
+
+/**
+ * Update drop zone UI with selected file info
+ * @param {File} file - The selected file
+ */
+function updateDropZoneWithFiles(files) {
+    const dropZone = document.getElementById("ca-certificate-upload-drop-zone");
+    if (!dropZone) {
+        return;
+    }
+
+    const fileListHTML = Array.from(files)
+        .map(
+            (file) =>
+                `<div>${escapeHtml(file.name)} • ${formatFileSize(file.size)}</div>`,
+        )
+        .join("");
+
+    dropZone.innerHTML = `
+        <div class="space-y-2">
+            <svg class="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <div class="text-sm text-gray-700 dark:text-gray-300">
+                <span class="font-medium">Selected Certificates:</span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400">${fileListHTML}</div>
+        </div>
+    `;
+}
+
+/**
+ * Format file size for display
+ * @param {number} bytes - File size in bytes
+ * @returns {string} - Formatted file size
+ */
+function formatFileSize(bytes) {
+    if (bytes === 0) {
+        return "0 Bytes";
+    }
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
+}
+
+/**
+ * Initialize drag and drop for CA cert upload
+ * Called on DOMContentLoaded
+ */
+function initializeCACertUpload() {
+    const dropZone = document.getElementById("ca-certificate-upload-drop-zone");
+    const fileInput = document.getElementById("upload-ca-certificate");
+
+    if (dropZone && fileInput) {
+        // Click to upload
+        dropZone.addEventListener("click", function (e) {
+            fileInput.click();
+        });
+
+        // Drag and drop handlers
+        dropZone.addEventListener("dragover", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add(
+                "border-indigo-500",
+                "bg-indigo-50",
+                "dark:bg-indigo-900/20",
+            );
+        });
+
+        dropZone.addEventListener("dragleave", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove(
+                "border-indigo-500",
+                "bg-indigo-50",
+                "dark:bg-indigo-900/20",
+            );
+        });
+
+        dropZone.addEventListener("drop", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove(
+                "border-indigo-500",
+                "bg-indigo-50",
+                "dark:bg-indigo-900/20",
+            );
+
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                // Trigger the validation
+                const event = new Event("change", { bubbles: true });
+                fileInput.dispatchEvent(event);
+            }
+        });
+    }
+}
+
+// Expose CA certificate upload/validation functions for usage in admin.html
+// This ensures ESLint recognizes them as used via global handlers.
+window.validateCACertFiles = validateCACertFiles;
+window.initializeCACertUpload = initializeCACertUpload;
+
+// Function to update body label based on content type selection
+function updateBodyLabel() {
+    const bodyLabel = document.getElementById("gateway-test-body-label");
+    const contentType = document.getElementById(
+        "gateway-test-content-type",
+    )?.value;
+
+    if (bodyLabel) {
+        bodyLabel.innerHTML =
+            contentType === "application/x-www-form-urlencoded"
+                ? 'Body (JSON)<br><small class="text-gray-500">Auto-converts to form data</small>'
+                : "Body (JSON)";
+    }
+}
+
+// Make it available globally for HTML onclick handlers
+window.updateBodyLabel = updateBodyLabel;

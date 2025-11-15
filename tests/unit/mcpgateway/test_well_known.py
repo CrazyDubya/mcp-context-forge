@@ -7,11 +7,14 @@ Authors: Mihai Criveti
 Test cases for well-known URI endpoints.
 """
 
-import json
-import pytest
-from fastapi.testclient import TestClient
+# Standard
 from unittest.mock import patch
 
+# Third-Party
+from fastapi.testclient import TestClient
+import pytest
+
+# First-Party
 # Import the main FastAPI app
 from mcpgateway.main import app
 
@@ -65,6 +68,7 @@ class TestSecurityTxtValidation:
 
     def test_validate_security_txt_empty(self):
         """Test validation with empty content."""
+        # First-Party
         from mcpgateway.routers.well_known import validate_security_txt
 
         result = validate_security_txt("")
@@ -75,6 +79,7 @@ class TestSecurityTxtValidation:
 
     def test_validate_security_txt_adds_expires(self):
         """Test that validation adds Expires field."""
+        # First-Party
         from mcpgateway.routers.well_known import validate_security_txt
 
         content = "Contact: security@example.com"
@@ -87,6 +92,7 @@ class TestSecurityTxtValidation:
 
     def test_validate_security_txt_preserves_expires(self):
         """Test that validation preserves existing Expires field."""
+        # First-Party
         from mcpgateway.routers.well_known import validate_security_txt
 
         content = "Contact: security@example.com\nExpires: 2025-12-31T23:59:59Z"
@@ -99,6 +105,7 @@ class TestSecurityTxtValidation:
 
     def test_validate_security_txt_preserves_comments(self):
         """Test that validation preserves existing comments."""
+        # First-Party
         from mcpgateway.routers.well_known import validate_security_txt
 
         content = "# Custom security information\nContact: security@example.com"
@@ -203,9 +210,7 @@ class TestCustomWellKnownFiles:
         """Test custom well-known file with known content type."""
         # Configure settings with custom file that has a known content type
         mock_settings.well_known_enabled = True
-        mock_settings.custom_well_known_files = {
-            "ai.txt": "User-agent: *\nDisallow: /private/"
-        }
+        mock_settings.custom_well_known_files = {"ai.txt": "User-agent: *\nDisallow: /private/"}
         mock_settings.well_known_cache_max_age = 7200
 
         response = client.get("/.well-known/ai.txt")
@@ -221,9 +226,7 @@ class TestCustomWellKnownFiles:
         """Test custom well-known file with unknown content type."""
         # Configure settings with custom file that's not in the registry
         mock_settings.well_known_enabled = True
-        mock_settings.custom_well_known_files = {
-            "custom-file.txt": "This is a custom well-known file"
-        }
+        mock_settings.custom_well_known_files = {"custom-file.txt": "This is a custom well-known file"}
         mock_settings.well_known_cache_max_age = 1800
 
         response = client.get("/.well-known/custom-file.txt")
@@ -240,7 +243,9 @@ class TestWellKnownAdminEndpoint:
     @pytest.fixture
     def auth_client(self):
         """Create a test client with auth dependency override."""
+        # First-Party
         from mcpgateway.utils.verify_credentials import require_auth
+
         app.dependency_overrides[require_auth] = lambda: "test_user"
         client = TestClient(app)
         yield client
@@ -300,10 +305,7 @@ class TestWellKnownAdminEndpoint:
         # Configure settings with custom files
         mock_settings.well_known_enabled = True
         mock_settings.well_known_security_txt_enabled = False
-        mock_settings.custom_well_known_files = {
-            "custom1.txt": "Custom content 1",
-            "custom2.txt": "Custom content 2"
-        }
+        mock_settings.custom_well_known_files = {"custom1.txt": "Custom content 1", "custom2.txt": "Custom content 2"}
         mock_settings.well_known_cache_max_age = 1800
 
         response = auth_client.get("/admin/well-known")
@@ -331,6 +333,7 @@ class TestWellKnownRegistry:
 
     def test_registry_contains_standard_files(self):
         """Test that registry contains expected standard files."""
+        # First-Party
         from mcpgateway.routers.well_known import WELL_KNOWN_REGISTRY
 
         expected_files = ["robots.txt", "security.txt", "ai.txt", "dnt-policy.txt", "change-password"]
@@ -343,6 +346,7 @@ class TestWellKnownRegistry:
 
     def test_registry_content_types(self):
         """Test that registry has correct content types."""
+        # First-Party
         from mcpgateway.routers.well_known import WELL_KNOWN_REGISTRY
 
         # Most should be text/plain

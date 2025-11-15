@@ -26,6 +26,7 @@ python3 -m mcpgateway.translate \
 ```
 
 **Endpoints**:
+
 - `GET /sse` - SSE stream for receiving messages
 - `POST /message` - Send JSON-RPC requests
 - `GET /healthz` - Health check
@@ -66,6 +67,7 @@ python3 -m mcpgateway.translate \
 ```
 
 **Endpoints**:
+
 - `POST /mcp` - Handle MCP requests
 - `GET /mcp` - SSE stream (when not in JSON response mode)
 - `GET /healthz` - Health check
@@ -106,6 +108,7 @@ python3 -m mcpgateway.translate \
 | **Bidirectional communication** | Full duplex message flow in all modes |
 | **Session management** | Stateful sessions with event replay (streamable HTTP) |
 | **Flexible response modes** | Choose between SSE streams or JSON responses |
+| **Dynamic environment injection** | Extract HTTP headers and inject as environment variables for multi-tenant support |
 | **Keep-alive support** | Automatic keepalive frames prevent connection timeouts |
 | **CORS configuration** | Enable cross-origin requests for web applications |
 | **Authentication** | OAuth2 Bearer token support for secure connections |
@@ -185,6 +188,43 @@ Connect to a remote streamable HTTP endpoint.
 | `--messagePath <path>` | Message POST endpoint path | /message |
 | `--keepAlive <seconds>` | Keepalive interval | 30 |
 
+### Dynamic Environment Variable Injection
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--enable-dynamic-env` | Enable dynamic environment variable injection from HTTP headers | False |
+| `--header-to-env <HEADER=ENV_VAR>` | Map HTTP header to environment variable (can be specified multiple times) | None |
+
+**Use case**: Multi-tenant deployments where different users need different credentials passed to the MCP server.
+
+**Example - GitHub Enterprise with per-user tokens**:
+```bash
+python3 -m mcpgateway.translate \
+  --stdio "uvx mcp-server-github" \
+  --expose-sse \
+  --port 9000 \
+  --enable-dynamic-env \
+  --header-to-env "Authorization=GITHUB_TOKEN" \
+  --header-to-env "X-GitHub-Enterprise-Host=GITHUB_HOST"
+```
+
+**Client request with headers**:
+```bash
+curl -X POST http://localhost:9000/message \
+  -H "Authorization: Bearer ghp_user123token" \
+  -H "X-GitHub-Enterprise-Host: github.company.com" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+**Security features**:
+
+- Header names validated (alphanumeric + hyphens only)
+- Environment variable names validated (standard naming rules)
+- Values sanitized (dangerous characters removed, length limits enforced)
+- Case-insensitive header matching
+- Headers not provided in mappings are ignored
+
 ## API Documentation
 
 ### SSE Mode Endpoints
@@ -196,6 +236,7 @@ Establishes an SSE connection for receiving MCP messages.
 **Response**: Server-Sent Events stream
 
 **Events**:
+
 - `endpoint`: Initial bootstrap with unique message URL
 - `message`: JSON-RPC responses from the MCP server
 - `keepalive`: Periodic keepalive signals
@@ -320,6 +361,42 @@ curl -X POST http://localhost:9001/message \
 curl -N http://localhost:9001/sse
 ```
 
+### Multi-Tenant GitHub Enterprise
+
+Enable per-user GitHub tokens for enterprise deployments:
+
+```bash
+# Start the bridge with dynamic environment injection
+python3 -m mcpgateway.translate \
+  --stdio "uvx mcp-server-github" \
+  --expose-sse \
+  --port 9000 \
+  --enable-dynamic-env \
+  --header-to-env "Authorization=GITHUB_TOKEN" \
+  --header-to-env "X-GitHub-Enterprise-Host=GITHUB_HOST"
+
+# User A's request (uses their personal access token)
+curl -X POST http://localhost:9000/message \
+  -H "Authorization: Bearer ghp_userA_token123" \
+  -H "X-GitHub-Enterprise-Host: github.company.com" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_repositories"}}'
+
+# User B's request (uses their own token)
+curl -X POST http://localhost:9000/message \
+  -H "Authorization: Bearer ghp_userB_token456" \
+  -H "X-GitHub-Enterprise-Host: github.company.com" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_repositories"}}'
+```
+
+**Benefits**:
+
+- Each user's credentials are isolated per request
+- No shared token security risks
+- Supports different enterprise hosts per user
+- MCP server process restarts with new credentials for each request
+
 ### Container Deployment
 
 ```dockerfile
@@ -401,6 +478,7 @@ python3 -m mcpgateway.translate \
 ### Connection Pooling
 
 When bridging to remote endpoints, connections are reused with automatic retry:
+
 - Initial retry delay: 1 second
 - Exponential backoff: Up to 30 seconds
 - Maximum retries: 5 (configurable in code)
@@ -416,11 +494,13 @@ When bridging to remote endpoints, connections are reused with automatic retry:
 ## Integration with MCP Gateway
 
 This tool complements the full MCP Gateway by providing:
+
 - Lightweight alternative for simple bridging needs
 - Development and testing utility
 - Protocol conversion without full gateway features
 
 For production deployments requiring:
+
 - Multiple server management
 - Persistent configuration
 - Advanced routing
@@ -430,15 +510,23 @@ Consider using the full [MCP Gateway](../overview/index.md).
 
 ## Advanced Configuration
 
-### Environment Variables
+### Configuration
 
-All command-line options can be set via environment variables:
+`mcpgateway.translate` reads its configuration from command-line arguments
+only, with one exception: the HTTP `Content-Type` header defaults to the
+`FORGE_CONTENT_TYPE` environment variable (falls back to `application/json`).
+If you want shell-friendly defaults, wrap the invocation with an alias or
+script:
 
 ```bash
-export MCPGATEWAY_PORT=9000
-export MCPGATEWAY_LOG_LEVEL=debug
-export MCPGATEWAY_CORS_ORIGINS="http://localhost:3000"
-python3 -m mcpgateway.translate --stdio "mcp-server"
+alias translate-git='python3 -m mcpgateway.translate --stdio "uvx mcp-server-git" --host 127.0.0.1 --port 9000 --expose-sse'
+translate-git
+```
+
+Optional: adjust the outbound content type once for your shell session:
+
+```bash
+export FORGE_CONTENT_TYPE=application/json
 ```
 
 ### Custom Headers
@@ -461,8 +549,68 @@ headers = {
 - **Performance**: Stateless mode recommended for high-traffic scenarios
 - **Compatibility**: Works with all MCP-compliant servers and clients
 
+## gRPC Service Exposure
+
+`mcpgateway.translate` now supports exposing gRPC services as MCP tools via automatic service discovery.
+
+### Quick Start
+
+Expose a local gRPC server via HTTP/SSE:
+
+```bash
+python3 -m mcpgateway.translate --grpc localhost:50051 --port 9000
+```
+
+### gRPC CLI Options
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `--grpc` | gRPC server target (host:port) | `--grpc localhost:50051` |
+| `--connect-grpc` | Remote gRPC endpoint to connect to | `--connect-grpc api.example.com:443` |
+| `--grpc-tls` | Enable TLS for gRPC connection | `--grpc-tls` |
+| `--grpc-cert` | Path to TLS certificate | `--grpc-cert /path/to/cert.pem` |
+| `--grpc-key` | Path to TLS key | `--grpc-key /path/to/key.pem` |
+| `--grpc-metadata` | gRPC metadata headers (repeatable) | `--grpc-metadata "auth=Bearer token"` |
+
+### Examples
+
+**Basic gRPC exposure:**
+```bash
+python3 -m mcpgateway.translate \
+  --grpc localhost:50051 \
+  --port 9000
+```
+
+**With TLS and authentication:**
+```bash
+python3 -m mcpgateway.translate \
+  --grpc api.example.com:443 \
+  --grpc-tls \
+  --grpc-cert /etc/ssl/certs/client.pem \
+  --grpc-key /etc/ssl/private/client.key \
+  --grpc-metadata "authorization=Bearer my-token" \
+  --grpc-metadata "x-tenant-id=customer-1" \
+  --port 9000
+```
+
+### How It Works
+
+1. **Connects** to the gRPC server at the specified target
+2. **Uses** [gRPC Server Reflection](https://grpc.io/docs/guides/reflection/) to discover services
+3. **Translates** between gRPC/Protobuf and MCP/JSON protocols
+4. **Exposes** each gRPC method as an MCP tool via HTTP/SSE
+
+### Requirements
+
+- gRPC server must have **server reflection enabled**
+- Server must be reachable from the gateway
+- For TLS: Valid certificates and keys
+
+For full gRPC service management (registry, admin UI, persistence), see [gRPC Services](grpc-services.md).
+
 ## Related Documentation
 
+- [gRPC Services](grpc-services.md)
 - [MCP Gateway Overview](../overview/index.md)
 - [MCP Protocol Specification](https://modelcontextprotocol.io)
 - [Transport Protocols](../architecture/index.md#system-architecture)
@@ -471,5 +619,6 @@ headers = {
 ## Support
 
 For issues, feature requests, or contributions:
+
 - GitHub: [mcp-context-forge](https://github.com/contingentai/mcp-context-forge)
 - Issues: [Report bugs](https://github.com/contingentai/mcp-context-forge/issues)

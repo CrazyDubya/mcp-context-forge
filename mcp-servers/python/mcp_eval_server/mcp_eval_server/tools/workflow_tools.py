@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
-"""MCP tools for evaluation workflow management."""
+"""Location: ./mcp-servers/python/mcp_eval_server/mcp_eval_server/tools/workflow_tools.py
+Copyright 2025
+SPDX-License-Identifier: Apache-2.0
+Authors: Mihai Criveti
+
+MCP tools for evaluation workflow management.
+"""
 
 # Standard
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import statistics
 from typing import Any, Dict, List, Optional
 import uuid
@@ -84,7 +90,7 @@ class WorkflowTools:
             "evaluation_steps": evaluation_steps,
             "success_thresholds": success_thresholds,
             "weights": weights,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(tz=timezone.utc).isoformat(),
             "version": "1.0",
         }
 
@@ -182,7 +188,7 @@ class WorkflowTools:
         suite_config = self.evaluation_suites[suite_id]
         evaluation_steps = suite_config["evaluation_steps"]
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(tz=timezone.utc)
         results_id = str(uuid.uuid4())
 
         # Run evaluation steps
@@ -191,7 +197,7 @@ class WorkflowTools:
         else:
             step_results = await self._run_steps_sequential(evaluation_steps, test_data)
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(tz=timezone.utc)
         duration = (end_time - start_time).total_seconds()
 
         # Calculate overall score
@@ -284,7 +290,7 @@ class WorkflowTools:
         # Merge test_data with step parameters
         combined_params = {**test_data, **params}
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(tz=timezone.utc)
 
         try:
             # Route to appropriate tool
@@ -307,7 +313,7 @@ class WorkflowTools:
             success = False
             error = str(e)
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(tz=timezone.utc)
         duration = (end_time - start_time).total_seconds()
 
         return {"tool": tool, "success": success, "result": result, "error": error, "execution_time": duration, "parameters_used": combined_params, "weight": step.get("weight", 1.0)}

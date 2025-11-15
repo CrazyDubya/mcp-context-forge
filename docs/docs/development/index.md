@@ -23,7 +23,7 @@ Welcome! This guide is for developers contributing to MCP Gateway. Whether you'r
 
 MCP Gateway is built with:
 
-* **Python 3.10+**
+* **Python 3.11+**
 * **FastAPI** + **SQLAlchemy (async)** + **Pydantic Settings**
 * **HTMX**, **Alpine.js**, **TailwindCSS** for the Admin UI
 
@@ -56,9 +56,9 @@ Test coverage includes:
 Use:
 
 ```bash
-make test          # run all tests
-make test-unit     # run only unit tests
-make test-e2e      # run end-to-end
+make test                  # run full suite
+python3 -m pytest tests/unit     # run only unit tests
+python3 -m pytest tests/e2e      # run end-to-end scenarios
 ```
 
 ---
@@ -100,16 +100,16 @@ Admin UI and API are protected by Basic Auth or JWT.
 To generate a JWT token:
 
 ```bash
-export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin --exp 0 --secret my-test-key)
+export MCPGATEWAY_BEARER_TOKEN=$(python3 -m mcpgateway.utils.create_jwt_token --username admin@example.com --exp 0 --secret my-test-key)
 echo $MCPGATEWAY_BEARER_TOKEN
 ```
 
 Then test:
 
 ```bash
-curl -k -sX GET \
+curl -sX GET \
   -H "Authorization: Bearer $MCPGATEWAY_BEARER_TOKEN" \
-  https://localhost:4444/tools | jq
+  http://localhost:4444/tools | jq
 ```
 
 ---
@@ -130,7 +130,7 @@ Key configs include:
 | ------------------- | ---------------------------- |
 | `DATABASE_URL`      | Database connection          |
 | `JWT_SECRET_KEY`    | Signing key for JWTs         |
-| `DEV_MODE=true`     | Enables hot reload and debug |
+| `DEV_MODE=true`     | Enables relaxed development defaults (set together with `RELOAD=true` if you rely on `run.sh`) |
 | `CACHE_TYPE=memory` | Options: memory, redis, none |
 
 ---

@@ -1,3 +1,10 @@
+*FEATURES.md
+spec/
+stats/
+.env.bak
+*cookies*txt
+cookies*
+cookies.txt
 .claude
 mcpgateway-export*
 mutants
@@ -41,7 +48,10 @@ node_modules/
 ./depupdate*
 .tmp*
 mcp.db-journal
+mcp.db-shm
+mcp.db-wal
 certs/
+jwt/
 FIXMEs
 *.old
 logs/
@@ -92,6 +102,7 @@ certs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 mcpgateway-wrapper/src/mcp_gateway_wrapper/__pycache__/
@@ -214,8 +225,6 @@ dmypy.json
 # Mac junk
 .DS_Store
 
-# MYPY cache
-.mypy_cache
 .idea/
 
 # Sonar
@@ -241,3 +250,10 @@ db_path/
 tmp/
 
 .continue
+
+.ruff_cache/
+
+# Rust build artifacts
+plugins_rust/target/
+plugins_rust/**/*.rs.bk
+plugins_rust/Cargo.lock

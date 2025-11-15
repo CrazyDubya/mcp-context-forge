@@ -14,26 +14,25 @@ import asyncio
 from datetime import datetime
 import json
 from unittest.mock import AsyncMock, Mock, patch
-import uuid
 
 # Third-Party
-from fastapi import HTTPException, WebSocket
+from fastapi import WebSocket
 from fastapi.testclient import TestClient
 import pytest
 
 # First-Party
 from mcpgateway.routers.reverse_proxy import (
+    manager,
     ReverseProxyManager,
     ReverseProxySession,
-    manager,
     router,
 )
 from mcpgateway.utils.verify_credentials import require_auth
 
-
 # --------------------------------------------------------------------------- #
 # Test Fixtures                                                              #
 # --------------------------------------------------------------------------- #
+
 
 @pytest.fixture
 def mock_websocket():
@@ -62,6 +61,7 @@ def sample_session(mock_websocket):
 # --------------------------------------------------------------------------- #
 # ReverseProxySession Tests                                                  #
 # --------------------------------------------------------------------------- #
+
 
 class TestReverseProxySession:
     """Test ReverseProxySession class."""
@@ -148,6 +148,7 @@ class TestReverseProxySession:
 # --------------------------------------------------------------------------- #
 # ReverseProxyManager Tests                                                  #
 # --------------------------------------------------------------------------- #
+
 
 class TestReverseProxyManager:
     """Test ReverseProxyManager class."""
@@ -257,6 +258,7 @@ class TestReverseProxyManager:
 # WebSocket Endpoint Tests                                                   #
 # --------------------------------------------------------------------------- #
 
+
 class TestWebSocketEndpoint:
     """Test WebSocket endpoint functionality."""
 
@@ -266,6 +268,7 @@ class TestWebSocketEndpoint:
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         mock_websocket.receive_text.side_effect = asyncio.CancelledError()
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -284,10 +287,10 @@ class TestWebSocketEndpoint:
         mock_websocket.headers = {}  # No X-Session-ID header
         mock_websocket.receive_text.side_effect = asyncio.CancelledError()
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
-        with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db, \
-             patch("mcpgateway.routers.reverse_proxy.uuid.uuid4") as mock_uuid:
+        with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db, patch("mcpgateway.routers.reverse_proxy.uuid.uuid4") as mock_uuid:
             mock_get_db.return_value = Mock()
             mock_uuid.return_value.hex = "generated-session-id"
 
@@ -303,11 +306,9 @@ class TestWebSocketEndpoint:
         """Test handling register message."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         register_msg = {"type": "register", "server": {"name": "test-server", "version": "1.0"}}
-        mock_websocket.receive_text.side_effect = [
-            json.dumps(register_msg),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps(register_msg), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -331,6 +332,7 @@ class TestWebSocketEndpoint:
         unregister_msg = {"type": "unregister"}
         mock_websocket.receive_text.return_value = json.dumps(unregister_msg)
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -343,11 +345,9 @@ class TestWebSocketEndpoint:
         """Test handling heartbeat message."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         heartbeat_msg = {"type": "heartbeat"}
-        mock_websocket.receive_text.side_effect = [
-            json.dumps(heartbeat_msg),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps(heartbeat_msg), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -369,11 +369,9 @@ class TestWebSocketEndpoint:
         """Test handling response message."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         response_msg = {"type": "response", "id": 1, "result": {"data": "test"}}
-        mock_websocket.receive_text.side_effect = [
-            json.dumps(response_msg),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps(response_msg), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -389,11 +387,9 @@ class TestWebSocketEndpoint:
         """Test handling notification message."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         notification_msg = {"type": "notification", "method": "test/notification"}
-        mock_websocket.receive_text.side_effect = [
-            json.dumps(notification_msg),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps(notification_msg), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -409,11 +405,9 @@ class TestWebSocketEndpoint:
         """Test handling unknown message type."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         unknown_msg = {"type": "unknown", "data": "test"}
-        mock_websocket.receive_text.side_effect = [
-            json.dumps(unknown_msg),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps(unknown_msg), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -428,11 +422,9 @@ class TestWebSocketEndpoint:
     async def test_websocket_invalid_json(self, mock_websocket):
         """Test handling invalid JSON."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
-        mock_websocket.receive_text.side_effect = [
-            "invalid json",
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = ["invalid json", asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -454,12 +446,9 @@ class TestWebSocketEndpoint:
         """Test handling general exception during message processing."""
         mock_websocket.headers = {"X-Session-ID": "test-session"}
         # First call succeeds, second call raises exception, third call cancels
-        mock_websocket.receive_text.side_effect = [
-            json.dumps({"type": "register", "server": {"name": "test"}}),
-            Exception("Test exception"),
-            asyncio.CancelledError()
-        ]
+        mock_websocket.receive_text.side_effect = [json.dumps({"type": "register", "server": {"name": "test"}}), Exception("Test exception"), asyncio.CancelledError()]
 
+        # First-Party
         from mcpgateway.routers.reverse_proxy import websocket_endpoint
 
         with patch("mcpgateway.routers.reverse_proxy.get_db") as mock_get_db:
@@ -478,13 +467,16 @@ class TestWebSocketEndpoint:
 # HTTP Endpoint Tests                                                        #
 # --------------------------------------------------------------------------- #
 
+
 class TestHTTPEndpoints:
     """Test HTTP endpoints."""
 
     @pytest.fixture
     def client(self):
         """Create test client."""
+        # Third-Party
         from fastapi import FastAPI
+
         app = FastAPI()
 
         # Override the auth dependency
@@ -567,10 +559,7 @@ class TestHTTPEndpoints:
 
         try:
             mcp_request = {"method": "tools/list", "id": 1}
-            response = client.post(
-                "/reverse-proxy/sessions/test-session/request",
-                json=mcp_request
-            )
+            response = client.post("/reverse-proxy/sessions/test-session/request", json=mcp_request)
 
             assert response.status_code == 200
             data = response.json()
@@ -586,10 +575,7 @@ class TestHTTPEndpoints:
     def test_send_request_to_session_not_found(self, client, mock_auth):
         """Test sending request to non-existent session."""
         mcp_request = {"method": "tools/list", "id": 1}
-        response = client.post(
-            "/reverse-proxy/sessions/nonexistent/request",
-            json=mcp_request
-        )
+        response = client.post("/reverse-proxy/sessions/nonexistent/request", json=mcp_request)
 
         assert response.status_code == 404
         data = response.json()
@@ -604,10 +590,7 @@ class TestHTTPEndpoints:
 
         try:
             mcp_request = {"method": "tools/list", "id": 1}
-            response = client.post(
-                "/reverse-proxy/sessions/test-session/request",
-                json=mcp_request
-            )
+            response = client.post("/reverse-proxy/sessions/test-session/request", json=mcp_request)
 
             assert response.status_code == 500
             data = response.json()
@@ -643,6 +626,7 @@ class TestHTTPEndpoints:
 # --------------------------------------------------------------------------- #
 # Integration Tests                                                          #
 # --------------------------------------------------------------------------- #
+
 
 class TestIntegration:
     """Integration tests for reverse proxy functionality."""

@@ -7,6 +7,7 @@ Authors: Mihai Criveti
 
 Module documentation...
 """
+
 # Standard
 import asyncio
 from types import SimpleNamespace
@@ -246,11 +247,7 @@ async def test_stream_success(monkeypatch):
 
     class AsyncContextManager:
         async def __aenter__(self):
-            resp = SimpleNamespace(
-                status_code=200,
-                is_success=True,
-                aiter_bytes=lambda: asyncio.as_completed([b"data"])
-            )
+            resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
             return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -265,6 +262,7 @@ async def test_stream_success(monkeypatch):
     async with client.stream("GET", "http://example.com") as resp:
         assert resp.status_code == 200
         assert resp.is_success
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("code", [201, 204])
@@ -348,19 +346,11 @@ async def test_stream_429_retry_after_header_handling(monkeypatch):
 
             if call_count == 1:
                 # First call: return 429 with Retry-After header
-                resp = SimpleNamespace(
-                    status_code=429,
-                    is_success=False,
-                    headers={"Retry-After": "2"}
-                )
+                resp = SimpleNamespace(status_code=429, is_success=False, headers={"Retry-After": "2"})
                 return resp
             else:
                 # Second call: return success
-                resp = SimpleNamespace(
-                    status_code=200,
-                    is_success=True,
-                    aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                )
+                resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                 return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -394,19 +384,11 @@ async def test_stream_429_retry_after_invalid_value(monkeypatch):
 
             if call_count == 1:
                 # First call: return 429 with invalid Retry-After header
-                resp = SimpleNamespace(
-                    status_code=429,
-                    is_success=False,
-                    headers={"Retry-After": "invalid"}
-                )
+                resp = SimpleNamespace(status_code=429, is_success=False, headers={"Retry-After": "invalid"})
                 return resp
             else:
                 # Second call: return success
-                resp = SimpleNamespace(
-                    status_code=200,
-                    is_success=True,
-                    aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                )
+                resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                 return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -435,11 +417,7 @@ async def test_stream_non_retryable_response_handling(monkeypatch):
     class AsyncContextManager:
         async def __aenter__(self):
             # Return a non-retryable error response (404)
-            resp = SimpleNamespace(
-                status_code=404,
-                is_success=False,
-                headers={}
-            )
+            resp = SimpleNamespace(status_code=404, is_success=False, headers={})
             return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -470,19 +448,11 @@ async def test_stream_retryable_response_handling(monkeypatch):
 
             if call_count == 1:
                 # First call: return retryable error response (503)
-                resp = SimpleNamespace(
-                    status_code=503,
-                    is_success=False,
-                    headers={}
-                )
+                resp = SimpleNamespace(status_code=503, is_success=False, headers={})
                 return resp
             else:
                 # Second call: return success
-                resp = SimpleNamespace(
-                    status_code=200,
-                    is_success=True,
-                    aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                )
+                resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                 return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -521,11 +491,7 @@ async def test_stream_exception_handling_retryable(monkeypatch):
             # Second call: return success
             class AsyncContextManager:
                 async def __aenter__(self):
-                    resp = SimpleNamespace(
-                        status_code=200,
-                        is_success=True,
-                        aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                    )
+                    resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                     return resp
 
                 async def __aexit__(self, exc_type, exc, tb):
@@ -592,11 +558,7 @@ async def test_stream_max_retries_no_exception(monkeypatch):
     class AsyncContextManager:
         async def __aenter__(self):
             # Always return retryable error response (503)
-            resp = SimpleNamespace(
-                status_code=503,
-                is_success=False,
-                headers={}
-            )
+            resp = SimpleNamespace(status_code=503, is_success=False, headers={})
             return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -620,17 +582,13 @@ async def test_stream_max_retries_no_exception(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_stream_sleep_with_jitter_single_argument(monkeypatch):
-    """Test that _sleep_with_jitter is called with single argument in stream method."""
+    """Test that _sleep_with_jitter is called with arguments in stream method."""
     client = ResilientHttpClient(max_retries=2, base_backoff=0.1, max_delay=1, jitter_max=0.1)
 
     class AsyncContextManager:
         async def __aenter__(self):
             # Return retryable error response (503)
-            resp = SimpleNamespace(
-                status_code=503,
-                is_success=False,
-                headers={}
-            )
+            resp = SimpleNamespace(status_code=503, is_success=False, headers={})
             return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -653,12 +611,13 @@ async def test_stream_sleep_with_jitter_single_argument(monkeypatch):
         async with client.stream("GET", "http://always-503.com") as resp:
             pass
 
-    # Should have called _sleep_with_jitter with single argument (backoff)
+    # Should have called _sleep_with_jitter with arguments (backoff + jitter range)
     assert len(sleep_calls) == 2  # Two retry attempts
     for call_args in sleep_calls:
-        assert len(call_args) == 1  # Single argument (backoff)
+        assert len(call_args) == 2  # arguments (backoff + jitter range)
         # Verify the argument is a number (the backoff value)
         assert isinstance(call_args[0], (int, float))
+        assert isinstance(call_args[1], (int, float))
 
 
 @pytest.mark.asyncio
@@ -675,19 +634,11 @@ async def test_stream_429_retry_after_zero_value(monkeypatch):
 
             if call_count == 1:
                 # First call: return 429 with zero Retry-After header
-                resp = SimpleNamespace(
-                    status_code=429,
-                    is_success=False,
-                    headers={"Retry-After": "0"}
-                )
+                resp = SimpleNamespace(status_code=429, is_success=False, headers={"Retry-After": "0"})
                 return resp
             else:
                 # Second call: return success
-                resp = SimpleNamespace(
-                    status_code=200,
-                    is_success=True,
-                    aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                )
+                resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                 return resp
 
         async def __aexit__(self, exc_type, exc, tb):
@@ -731,16 +682,12 @@ async def test_stream_429_no_retry_after_header(monkeypatch):
                 resp = SimpleNamespace(
                     status_code=429,
                     is_success=False,
-                    headers={}  # No Retry-After header
+                    headers={},  # No Retry-After header
                 )
                 return resp
             else:
                 # Second call: return success
-                resp = SimpleNamespace(
-                    status_code=200,
-                    is_success=True,
-                    aiter_bytes=lambda: asyncio.as_completed([b"data"])
-                )
+                resp = SimpleNamespace(status_code=200, is_success=True, aiter_bytes=lambda: asyncio.as_completed([b"data"]))
                 return resp
 
         async def __aexit__(self, exc_type, exc, tb):

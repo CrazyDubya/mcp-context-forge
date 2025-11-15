@@ -30,11 +30,12 @@ import logging
 from unittest.mock import patch
 
 # Third-Party
-from pydantic import ValidationError
+from pydantic import ValidationError, SecretStr
 import pytest
 
 # First-Party
-from mcpgateway.schemas import AdminToolCreate, encode_datetime, GatewayCreate, PromptArgument, PromptCreate, ResourceCreate, RPCRequest, ServerCreate, to_camel_case, ToolCreate, ToolInvocation
+from mcpgateway.schemas import AdminToolCreate, encode_datetime, GatewayCreate, PromptArgument, PromptCreate, ResourceCreate, RPCRequest, ServerCreate, ToolCreate, ToolInvocation
+from mcpgateway.utils.base_models import to_camel_case
 from mcpgateway.validators import SecurityValidator
 
 # Configure logging for better test debugging
@@ -403,7 +404,7 @@ class TestSecurityValidation:
             "Description with special chars: !@#$%",
             "Multi-line\ndescription",
             "Unicode: 你好世界 مرحبا بالعالم",
-            "a" * 4096,  # At limit (changed from 4999)
+            "a" * 8192,  # At limit (changed from 4999)
         ]
 
         for desc in valid_descriptions:
@@ -421,9 +422,15 @@ class TestSecurityValidation:
             logger.debug(f"Testing XSS payload in description: {payload[:50]}...")
             must_fail(payload, "XSS description")
 
-        # Invalid descriptions - too long
+        # ✂️ Long descriptions (should be truncated, not rejected)
         logger.debug("Testing description that exceeds max length")
-        must_fail("x" * 4097, "Too long description")
+        long_desc = "x" * (SecurityValidator.MAX_DESCRIPTION_LENGTH + 100)
+        tool = ToolCreate(name=self.VALID_TOOL_NAME, url=self.VALID_URL, description=long_desc)
+
+        assert tool.description is not None
+        assert len(tool.description) == SecurityValidator.MAX_DESCRIPTION_LENGTH
+        assert tool.description == long_desc[:SecurityValidator.MAX_DESCRIPTION_LENGTH]
+        print(f"✅ Long description truncated to {SecurityValidator.MAX_DESCRIPTION_LENGTH} chars")
 
     def test_tool_create_headers_validation(self):
         """Test headers validation for depth and structure."""
@@ -524,7 +531,7 @@ class TestSecurityValidation:
         logger.debug("Testing tool authentication assembly")
 
         # Basic auth
-        basic_data = {"name": self.VALID_TOOL_NAME, "url": self.VALID_URL, "auth_type": "basic", "auth_username": "user", "auth_password": "pass"}
+        basic_data = {"name": self.VALID_TOOL_NAME, "url": self.VALID_URL, "auth_type": "basic", "auth_username": "user", "auth_password": SecretStr("pass")}
         tool = ToolCreate(**basic_data)
         assert tool.auth.auth_type == "basic"
         assert tool.auth.auth_value is not None
@@ -1073,7 +1080,7 @@ class TestSecurityValidation:
             logger.debug(f"Testing SQL injection in auth: {payload}")
             # Auth fields might not be validated as strictly
             try:
-                tool = ToolCreate(name=self.VALID_TOOL_NAME, url=self.VALID_URL, auth_type="basic", auth_username=payload, auth_password="password")
+                tool = ToolCreate(name=self.VALID_TOOL_NAME, url=self.VALID_URL, auth_type="basic", auth_username=payload, auth_password=SecretStr("password"))
                 # If it passes, auth was assembled
                 assert tool.auth is not None
             except ValidationError as e:
@@ -1083,7 +1090,7 @@ class TestSecurityValidation:
         for payload in self.LDAP_INJECTION_PAYLOADS[:3]:
             logger.debug(f"Testing LDAP injection in gateway auth: {payload}")
             try:
-                gateway = GatewayCreate(name="gateway", url=self.VALID_URL, auth_type="basic", auth_username=payload, auth_password="password")
+                gateway = GatewayCreate(name="gateway", url=self.VALID_URL, auth_type="basic", auth_username=payload, auth_password=SecretStr("password"))
                 assert gateway.auth_value is not None
             except ValidationError as e:
                 logger.debug(f"Gateway auth validation error: {e}")

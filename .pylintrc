@@ -387,7 +387,7 @@ int-import-graph=
 known-standard-library=
 
 # Force import order to recognize a module as part of a third party library.
-known-third-party=enchant
+known-third-party=enchant,alembic
 
 # Couples of modules and preferred modules, separated by a comma.
 preferred-modules=
@@ -446,9 +446,10 @@ disable=raw-checker-failed,
         too-many-lines,
         too-many-branches,
         too-many-statements,
-        too-many-public-methods
+        too-many-public-methods,
+        unsubscriptable-object
 
-# TODO: remove most of the disabled onews above
+# TODO: remove most of the disabled items above
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option

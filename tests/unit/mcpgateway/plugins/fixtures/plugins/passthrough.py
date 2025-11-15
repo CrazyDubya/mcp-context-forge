@@ -7,10 +7,10 @@ Authors: Mihai Criveti
 Passthrough plugin.
 """
 
-
+# First-Party
 from mcpgateway.plugins.framework import (
-    Plugin,
     PluginContext,
+    Plugin,
     PromptPosthookPayload,
     PromptPosthookResult,
     PromptPrehookPayload,
@@ -24,6 +24,7 @@ from mcpgateway.plugins.framework import (
     ToolPreInvokePayload,
     ToolPreInvokeResult,
 )
+
 
 class PassThroughPlugin(Plugin):
     """A simple pass through plugin."""

@@ -2,6 +2,14 @@
 
 This document provides practical examples of using the logging features in MCP Gateway.
 
+!!! tip "Complete Configuration"
+    For production deployments, copy `.env.example` to `.env` and configure all settings including multitenancy:
+    ```bash
+    cp .env.example .env
+    # Edit .env to set PLATFORM_ADMIN_EMAIL, PLATFORM_ADMIN_PASSWORD, etc.
+    mcpgateway --host 0.0.0.0 --port 4444
+    ```
+
 ## Quick Start Examples
 
 ### 1. Default Setup (Recommended)
@@ -108,8 +116,9 @@ LOG_FOLDER=logs
 # docker-compose.yml
 services:
   mcpgateway:
-    image: ghcr.io/ibm/mcp-context-forge:0.6.0
+    image: ghcr.io/ibm/mcp-context-forge:0.9.0
     environment:
+
       - LOG_LEVEL=INFO
       # Default: logs to stdout/stderr only (recommended for containers)
       # Optional: Enable file logging (no rotation)
@@ -137,8 +146,10 @@ spec:
   template:
     spec:
       containers:
+
       - name: mcpgateway
         env:
+
         - name: LOG_LEVEL
           value: "INFO"
         # Default: logs to stdout/stderr (recommended for Kubernetes)
@@ -237,8 +248,10 @@ grep -E "HTTP|request" logs/mcpgateway.log
 # Configure Filebeat to ship logs
 # filebeat.yml
 filebeat.inputs:
+
 - type: log
   paths:
+
     - /var/log/mcpgateway/*.log
   json.keys_under_root: true
   json.add_error_key: true
@@ -252,6 +265,7 @@ logs_config:
   logs_dd_url: intake.logs.datadoghq.com:10516
 
 logs:
+
   - type: file
     path: "/var/log/mcpgateway/*.log"
     service: mcpgateway
@@ -264,8 +278,10 @@ logs:
 # Use log-based metrics with promtail
 # promtail-config.yml
 scrape_configs:
+
 - job_name: mcpgateway
   static_configs:
+
   - targets:
     - localhost
     labels:

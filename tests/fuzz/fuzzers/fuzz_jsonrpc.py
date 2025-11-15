@@ -7,16 +7,21 @@ Authors: Mihai Criveti
 
 Coverage-guided fuzzing for JSON-RPC validation using Atheris.
 """
-import atheris
-import sys
+
+# Standard
 import json
 import os
+import sys
+
+# Third-Party
+import atheris
 
 # Ensure the project is in the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../.."))
 
 try:
-    from mcpgateway.validation.jsonrpc import validate_request, validate_response, JSONRPCError
+    # First-Party
+    from mcpgateway.validation.jsonrpc import JSONRPCError, validate_request, validate_response
 except ImportError as e:
     print(f"Import error: {e}")
     sys.exit(1)
@@ -38,27 +43,17 @@ def TestOneInput(data: bytes) -> None:
 
         if choice == 0:
             # Test request validation with structured data
-            request = {
-                "jsonrpc": fdp.ConsumeUnicodeNoSurrogates(10),
-                "method": fdp.ConsumeUnicodeNoSurrogates(50),
-                "id": fdp.ConsumeIntInRange(0, 1000000)
-            }
+            request = {"jsonrpc": fdp.ConsumeUnicodeNoSurrogates(10), "method": fdp.ConsumeUnicodeNoSurrogates(50), "id": fdp.ConsumeIntInRange(0, 1000000)}
 
             # Add params sometimes
             if fdp.ConsumeBool():
                 param_choice = fdp.ConsumeIntInRange(0, 2)
                 if param_choice == 0:
                     # List params
-                    request["params"] = [
-                        fdp.ConsumeUnicodeNoSurrogates(30)
-                        for _ in range(fdp.ConsumeIntInRange(0, 5))
-                    ]
+                    request["params"] = [fdp.ConsumeUnicodeNoSurrogates(30) for _ in range(fdp.ConsumeIntInRange(0, 5))]
                 elif param_choice == 1:
                     # Dict params
-                    request["params"] = {
-                        fdp.ConsumeUnicodeNoSurrogates(20): fdp.ConsumeUnicodeNoSurrogates(40)
-                        for _ in range(fdp.ConsumeIntInRange(0, 5))
-                    }
+                    request["params"] = {fdp.ConsumeUnicodeNoSurrogates(20): fdp.ConsumeUnicodeNoSurrogates(40) for _ in range(fdp.ConsumeIntInRange(0, 5))}
                 else:
                     # Invalid params
                     request["params"] = fdp.ConsumeUnicodeNoSurrogates(50)
@@ -67,10 +62,7 @@ def TestOneInput(data: bytes) -> None:
 
         elif choice == 1:
             # Test response validation with structured data
-            response = {
-                "jsonrpc": fdp.ConsumeUnicodeNoSurrogates(10),
-                "id": fdp.ConsumeIntInRange(0, 1000000)
-            }
+            response = {"jsonrpc": fdp.ConsumeUnicodeNoSurrogates(10), "id": fdp.ConsumeIntInRange(0, 1000000)}
 
             # Add result or error
             if fdp.ConsumeBool():
@@ -86,10 +78,7 @@ def TestOneInput(data: bytes) -> None:
                     response["result"] = {"data": fdp.ConsumeUnicodeNoSurrogates(50)}
             else:
                 # Error response
-                error = {
-                    "code": fdp.ConsumeIntInRange(-32768, 32767),
-                    "message": fdp.ConsumeUnicodeNoSurrogates(100)
-                }
+                error = {"code": fdp.ConsumeIntInRange(-32768, 32767), "message": fdp.ConsumeUnicodeNoSurrogates(100)}
                 if fdp.ConsumeBool():
                     error["data"] = fdp.ConsumeUnicodeNoSurrogates(100)
                 response["error"] = error
@@ -133,7 +122,7 @@ def TestOneInput(data: bytes) -> None:
             # Test with binary data
             raw_bytes = fdp.ConsumeBytes(100)
             try:
-                text = raw_bytes.decode('utf-8', errors='ignore')
+                text = raw_bytes.decode("utf-8", errors="ignore")
                 data = json.loads(text)
                 if isinstance(data, dict):
                     validate_request(data)

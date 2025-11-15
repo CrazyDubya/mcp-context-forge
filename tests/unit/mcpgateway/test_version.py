@@ -254,10 +254,12 @@ def test_system_metrics_full(monkeypatch: pytest.MonkeyPatch) -> None:
 # Additional comprehensive tests to achieve 100% coverage                    #
 # --------------------------------------------------------------------------- #
 
+
 def test_psutil_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the ImportError branch for psutil."""
     # Simply test by setting psutil to None after import - this simulates
     # the ImportError case without needing complex import mocking
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # Set psutil to None to simulate ImportError
@@ -270,6 +272,7 @@ def test_psutil_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_redis_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test the ImportError branch for redis."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # Set aioredis to None and REDIS_AVAILABLE to False to simulate ImportError
@@ -283,6 +286,7 @@ def test_redis_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_sanitize_url_none_and_empty() -> None:
     """Test _sanitize_url with None and empty string."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # Test None input
@@ -293,6 +297,7 @@ def test_sanitize_url_none_and_empty() -> None:
 
 def test_sanitize_url_no_username() -> None:
     """Test _sanitize_url when password exists but no username."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # URL with password but no username
@@ -303,6 +308,7 @@ def test_sanitize_url_no_username() -> None:
 
 def test_system_metrics_with_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test _system_metrics with various exception paths."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     class _FailingPsutil:
@@ -310,11 +316,11 @@ def test_system_metrics_with_exceptions(monkeypatch: pytest.MonkeyPatch) -> None
 
         @staticmethod
         def virtual_memory():
-            return types.SimpleNamespace(total=8*1073741824, used=4*1073741824)
+            return types.SimpleNamespace(total=8 * 1073741824, used=4 * 1073741824)
 
         @staticmethod
         def swap_memory():
-            return types.SimpleNamespace(total=2*1073741824, used=1*1073741824)
+            return types.SimpleNamespace(total=2 * 1073741824, used=1 * 1073741824)
 
         @staticmethod
         def cpu_freq():
@@ -334,7 +340,7 @@ def test_system_metrics_with_exceptions(monkeypatch: pytest.MonkeyPatch) -> None
 
         @staticmethod
         def disk_usage(path):
-            return types.SimpleNamespace(total=100*1073741824, used=40*1073741824)
+            return types.SimpleNamespace(total=100 * 1073741824, used=40 * 1073741824)
 
         class Process:
             pid = 1234
@@ -347,7 +353,7 @@ def test_system_metrics_with_exceptions(monkeypatch: pytest.MonkeyPatch) -> None
                 return 1.5
 
             def memory_info(self):
-                return types.SimpleNamespace(rss=10*1048576, vms=20*1048576)
+                return types.SimpleNamespace(rss=10 * 1048576, vms=20 * 1048576)
 
             def num_threads(self):
                 return 5
@@ -368,6 +374,7 @@ def test_system_metrics_with_exceptions(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_system_metrics_no_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test _system_metrics when psutil is None."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     monkeypatch.setattr(ver_mod, "psutil", None)
@@ -377,13 +384,14 @@ def test_system_metrics_no_psutil(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_login_html_rendering() -> None:
     """Test _login_html function."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     next_url = "/version?format=html"
     html = ver_mod._login_html(next_url)
 
-    assert '<!doctype html>' in html
-    assert '<h2>Please log in</h2>' in html
+    assert "<!doctype html>" in html
+    assert "<h2>Please log in</h2>" in html
     assert 'action="/login"' in html
     assert f'name="next" value="{next_url}"' in html
     assert 'type="text" name="username"' in html
@@ -396,16 +404,14 @@ def test_login_html_rendering() -> None:
 def test_version_endpoint_redis_conditions() -> None:
     """Test conditions that would trigger Redis health check branches."""
     # First-Party
-    from mcpgateway import version as ver_mod
 
     # Test the Redis health check conditions directly
     # This tests the logic branches without async complexity
-
     # Test 1: Redis not available
     assert not (False and "redis" == "redis" and "redis://localhost")
 
     # Test 2: Redis available, cache_type is redis, redis_url exists
-    assert (True and "redis" == "redis" and "redis://localhost")
+    assert True and "redis" == "redis" and "redis://localhost"
 
     # Test 3: Redis available, but cache_type not redis
     assert not (True and "memory" == "redis" and "redis://localhost")
@@ -416,6 +422,7 @@ def test_version_endpoint_redis_conditions() -> None:
 
 def test_is_secret_comprehensive() -> None:
     """Test _is_secret with comprehensive coverage of all branches."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # Test secret keywords (case insensitive)
@@ -439,11 +446,11 @@ def test_is_secret_comprehensive() -> None:
 
 def test_import_error_branches() -> None:
     """Test import error coverage by checking the current state."""
+    # First-Party
     from mcpgateway import version as ver_mod
 
     # These tests check the current runtime state to ensure
     # the import branches were properly executed at module load time
-
     # psutil should be available in test environment, but if it wasn't
     # the code would set it to None in the except block (lines 80-81)
     psutil_available = ver_mod.psutil is not None

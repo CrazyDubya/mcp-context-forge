@@ -1,9 +1,10 @@
 # 🚀 Deploying the MCP Gateway Stack to IBM Cloud Kubernetes Service with Argo CD
 
-!!! warning "Work in progress"
-    This document is a WORK IN PROGRESS and is not yet ready for consumption.
+!!! warning "Preview"
+    This guide is in preview and will continue to evolve. Content is accurate but may receive refinements as the Helm chart and GitOps flows mature.
 
 !!! abstract "What you'll achieve"
+
     * Build or pull the OCI image(s) for MCP Gateway
     * Push them to **IBM Container Registry (ICR)**
     * Provision an **IKS** cluster with VPC-native networking
@@ -106,7 +107,7 @@ podman build -t mcp-context-forge:dev -f Containerfile .
 !!! note "Production deployments"
     Production deployments can pull the signed image directly:
     ```
-    ghcr.io/ibm/mcp-context-forge:0.6.0
+    ghcr.io/ibm/mcp-context-forge:0.9.0
     ```
 
 ---
@@ -169,8 +170,8 @@ ibmcloud is subnet-create mcp-subnet-eu-de-3 \
 ibmcloud cr login
 
 # Tag and push the image
-podman tag mcp-context-forge:dev eu.icr.io/mcp-gw/mcpgateway:0.6.0
-podman push eu.icr.io/mcp-gw/mcpgateway:0.6.0
+podman tag mcp-context-forge:dev eu.icr.io/mcp-gw/mcpgateway:0.9.0
+podman push eu.icr.io/mcp-gw/mcpgateway:0.9.0
 
 # Verify the image
 ibmcloud cr images --restrict mcp-gw
@@ -253,21 +254,27 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
   egress:
+
   - to: []
     ports:
+
     - protocol: TCP
       port: 53
+
     - protocol: UDP
       port: 53
+
   - to:
     - namespaceSelector:
         matchLabels:
           name: kube-system
   ingress:
+
   - from:
     - namespaceSelector:
         matchLabels:
           name: ingress-nginx
+
     - namespaceSelector:
         matchLabels:
           name: argocd
@@ -323,6 +330,7 @@ metadata:
   name: mcp-stack
   namespace: argocd
   finalizers:
+
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
@@ -332,6 +340,7 @@ spec:
     targetRevision: main
     helm:
       valueFiles:
+
         - values.yaml
         - envs/iks/values.yaml   # custom overrides
   destination:
@@ -342,6 +351,7 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
+
     - CreateNamespace=true
     - PrunePropagationPolicy=foreground
     - PruneLast=true
@@ -359,7 +369,7 @@ mcpContextForge:
 
   image:
     repository: eu.icr.io/mcp-gw/mcpgateway
-    tag: "0.6.0"
+    tag: "0.9.0"
     pullPolicy: IfNotPresent
 
   # Service configuration
@@ -376,27 +386,37 @@ mcpContextForge:
       kubernetes.io/ingress.class: "public-iks-k8s-nginx"
       cert-manager.io/cluster-issuer: "letsencrypt-prod"
     hosts:
+
       - host: mcp-gateway.<CLUSTER_INGRESS_SUBDOMAIN>
         paths:
+
           - path: /
             pathType: Prefix
     tls:
+
       - secretName: mcp-gateway-tls
         hosts:
+
           - mcp-gateway.<CLUSTER_INGRESS_SUBDOMAIN>
 
   # Environment variables
   env:
+
     - name: AUTH_REQUIRED
       value: "true"
+
     - name: HOST
       value: "0.0.0.0"
+
     - name: PORT
       value: "4444"
+
     - name: LOG_LEVEL
       value: "INFO"
+
     - name: CACHE_TYPE
       value: "redis"
+
     - name: FEDERATION_ENABLED
       value: "true"
 
@@ -498,26 +518,33 @@ securityContext:
   runAsUser: 1001
   capabilities:
     drop:
+
     - ALL
 
 # Network Policy
 networkPolicy:
   enabled: true
   ingress:
+
     - from:
       - namespaceSelector:
           matchLabels:
             name: ingress-nginx
       ports:
+
       - protocol: TCP
         port: 4444
   egress:
+
     - to: []
       ports:
+
       - protocol: TCP
         port: 53
+
       - protocol: UDP
         port: 53
+
     - to:
       - namespaceSelector:
           matchLabels:
@@ -727,11 +754,11 @@ Update the image tag in your values file and commit:
 
 ```bash
 # Update values file
-sed -i 's/tag: "0.3.0"/tag: "0.6.0"/' charts/mcp-stack/envs/iks/values.yaml
+sed -i 's/tag: "0.7.0"/tag: "0.9.0"/' charts/mcp-stack/envs/iks/values.yaml
 
 # Commit and push
 git add charts/mcp-stack/envs/iks/values.yaml
-git commit -m "Upgrade MCP Gateway to v0.6.0"
+git commit -m "Upgrade MCP Gateway to v0.9.0"
 git push
 
 # Argo CD will automatically sync the changes
@@ -804,7 +831,14 @@ ibmcloud logs tail -r eu-de
 
 ## 11.5 Grafana Dashboards
 
-> TODO
+If you collect Prometheus metrics from the gateway and backing services, import standard HTTP and container dashboards or create a custom dashboard for:
+
+- Request rate, error rate, and latency for `/health`, `/version`, and `/rpc`
+- Pod CPU/memory and restarts per deployment
+- Database connection count, latency, and saturation
+- Redis hit ratio and command latency
+
+Store dashboards as code in your Git repo and have Argo CD apply them via ConfigMaps or Grafana's provisioning.
 
 ---
 
@@ -857,6 +891,7 @@ postgres:
 # Use external database
 mcpContextForge:
   env:
+
     - name: DATABASE_URL
       valueFrom:
         secretKeyRef:

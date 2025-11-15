@@ -50,22 +50,28 @@ Examples:
 
 # Standard
 import asyncio
+from asyncio import Task
+from datetime import datetime, timezone
 import json
 import logging
 import time
+import traceback
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
+import uuid
 
 # Third-Party
 from fastapi import HTTPException, status
 
 # First-Party
 from mcpgateway import __version__
+from mcpgateway.common.models import Implementation, InitializeResult, ServerCapabilities
 from mcpgateway.config import settings
 from mcpgateway.db import get_db, SessionMessageRecord, SessionRecord
-from mcpgateway.models import Implementation, InitializeResult, ServerCapabilities
 from mcpgateway.services import PromptService, ResourceService, ToolService
 from mcpgateway.services.logging_service import LoggingService
 from mcpgateway.transports import SSETransport
+from mcpgateway.utils.create_jwt_token import create_jwt_token
 from mcpgateway.utils.retry_manager import ResilientHttpClient
 from mcpgateway.validation.jsonrpc import JSONRPCError
 
@@ -179,7 +185,7 @@ class SessionBackend:
         # Set up backend-specific components
         if self._backend == "memory":
             # Nothing special needed for memory backend
-            self._session_message = None
+            self._session_message: dict[str, Any] | None = None
 
         elif self._backend == "none":
             # No session tracking - this is just a dummy registry
@@ -289,8 +295,9 @@ class SessionRegistry(SessionBackend):
         """
         super().__init__(backend=backend, redis_url=redis_url, database_url=database_url, session_ttl=session_ttl, message_ttl=message_ttl)
         self._sessions: Dict[str, Any] = {}  # Local transport cache
+        self._client_capabilities: Dict[str, Dict[str, Any]] = {}  # Client capabilities by session_id
         self._lock = asyncio.Lock()
-        self._cleanup_task = None
+        self._cleanup_task: Task | None = None
 
     async def initialize(self) -> None:
         """Initialize the registry with async setup.
@@ -595,6 +602,10 @@ class SessionRegistry(SessionBackend):
         async with self._lock:
             if session_id in self._sessions:
                 transport = self._sessions.pop(session_id)
+            # Also clean up client capabilities
+            if session_id in self._client_capabilities:
+                self._client_capabilities.pop(session_id)
+                logger.debug(f"Removed capabilities for session {session_id}")
 
         # Disconnect transport if found
         if transport:
@@ -692,7 +703,7 @@ class SessionRegistry(SessionBackend):
             else:
                 msg_json = json.dumps(str(message))
 
-            self._session_message: Dict[str, Any] = {"session_id": session_id, "message": msg_json}
+            self._session_message: Dict[str, Any] | None = {"session_id": session_id, "message": msg_json}
 
         elif self._backend == "redis":
             try:
@@ -830,7 +841,7 @@ class SessionRegistry(SessionBackend):
         elif self._backend == "memory":
             # if self._session_message:
             transport = self.get_session_sync(session_id)
-            if transport:
+            if transport and self._session_message:
                 message = json.loads(str(self._session_message.get("message")))
                 await self.generate_response(message=message, transport=transport, server_id=server_id, user=user, base_url=base_url)
 
@@ -858,7 +869,7 @@ class SessionRegistry(SessionBackend):
 
         elif self._backend == "database":
 
-            def _db_read_session(session_id: str) -> SessionRecord:
+            def _db_read_session(session_id: str) -> SessionRecord | None:
                 """Check if session still exists in the database.
 
                 Queries the SessionRecord table to verify that the session
@@ -893,7 +904,7 @@ class SessionRegistry(SessionBackend):
                 finally:
                     db_session.close()
 
-            def _db_read(session_id: str) -> SessionMessageRecord:
+            def _db_read(session_id: str) -> SessionMessageRecord | None:
                 """Read pending message for a session from the database.
 
                 Retrieves the first (oldest) unprocessed message for the given
@@ -1185,7 +1196,7 @@ class SessionRegistry(SessionBackend):
                 await asyncio.sleep(300)  # Sleep longer on error
 
     # Handle initialize logic
-    async def handle_initialize_logic(self, body: Dict[str, Any]) -> InitializeResult:
+    async def handle_initialize_logic(self, body: Dict[str, Any], session_id: Optional[str] = None) -> InitializeResult:
         """Process MCP protocol initialization request.
 
         Validates the protocol version and returns server capabilities and information.
@@ -1193,7 +1204,8 @@ class SessionRegistry(SessionBackend):
 
         Args:
             body: Request body containing protocol_version and optional client_info.
-                Expected keys: 'protocol_version' or 'protocolVersion'.
+                Expected keys: 'protocol_version' or 'protocolVersion', 'capabilities'.
+            session_id: Optional session ID to associate client capabilities with.
 
         Returns:
             InitializeResult containing protocol version, server capabilities, and server info.
@@ -1206,10 +1218,10 @@ class SessionRegistry(SessionBackend):
             >>> from mcpgateway.cache.session_registry import SessionRegistry
             >>>
             >>> reg = SessionRegistry()
-            >>> body = {'protocol_version': '2025-03-26'}
+            >>> body = {'protocol_version': '2025-06-18'}
             >>> result = asyncio.run(reg.handle_initialize_logic(body))
             >>> result.protocol_version
-            '2025-03-26'
+            '2025-06-18'
             >>> result.server_info.name
             'MCP_Gateway'
             >>>
@@ -1221,7 +1233,7 @@ class SessionRegistry(SessionBackend):
             400
         """
         protocol_version = body.get("protocol_version") or body.get("protocolVersion")
-        # body.get("capabilities", {})
+        client_capabilities = body.get("capabilities", {})
         # body.get("client_info") or body.get("clientInfo", {})
 
         if not protocol_version:
@@ -1234,18 +1246,76 @@ class SessionRegistry(SessionBackend):
         if protocol_version != settings.protocol_version:
             logger.warning(f"Using non default protocol version: {protocol_version}")
 
+        # Store client capabilities if session_id provided
+        if session_id and client_capabilities:
+            await self.store_client_capabilities(session_id, client_capabilities)
+            logger.debug(f"Stored capabilities for session {session_id}: {client_capabilities}")
+
         return InitializeResult(
-            protocolVersion=settings.protocol_version,
+            protocolVersion=protocol_version,
             capabilities=ServerCapabilities(
                 prompts={"listChanged": True},
                 resources={"subscribe": True, "listChanged": True},
                 tools={"listChanged": True},
                 logging={},
-                # roots={"listChanged": True}
+                completions={},  # Advertise completions capability per MCP spec
             ),
             serverInfo=Implementation(name=settings.app_name, version=__version__),
             instructions=("MCP Gateway providing federated tools, resources and prompts. Use /admin interface for configuration."),
         )
+
+    async def store_client_capabilities(self, session_id: str, capabilities: Dict[str, Any]) -> None:
+        """Store client capabilities for a session.
+
+        Args:
+            session_id: The session ID
+            capabilities: Client capabilities dictionary from initialize request
+        """
+        async with self._lock:
+            self._client_capabilities[session_id] = capabilities
+        logger.debug(f"Stored capabilities for session {session_id}")
+
+    async def get_client_capabilities(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get client capabilities for a session.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            Client capabilities dictionary, or None if not found
+        """
+        async with self._lock:
+            return self._client_capabilities.get(session_id)
+
+    async def has_elicitation_capability(self, session_id: str) -> bool:
+        """Check if a session has elicitation capability.
+
+        Args:
+            session_id: The session ID
+
+        Returns:
+            True if session supports elicitation, False otherwise
+        """
+        capabilities = await self.get_client_capabilities(session_id)
+        if not capabilities:
+            return False
+        # Check if elicitation capability exists in client capabilities
+        return bool(capabilities.get("elicitation"))
+
+    async def get_elicitation_capable_sessions(self) -> list[str]:
+        """Get list of session IDs that support elicitation.
+
+        Returns:
+            List of session IDs with elicitation capability
+        """
+        async with self._lock:
+            capable_sessions = []
+            for session_id, capabilities in self._client_capabilities.items():
+                if capabilities.get("elicitation"):
+                    # Verify session still exists
+                    if session_id in self._sessions:
+                        capable_sessions.append(session_id)
+            return capable_sessions
 
     async def generate_response(self, message: Dict[str, Any], transport: SSETransport, server_id: Optional[str], user: Dict[str, Any], base_url: str) -> None:
         """Generate and send response for incoming MCP protocol message.
@@ -1279,34 +1349,86 @@ class SessionRegistry(SessionBackend):
         result = {}
 
         if "method" in message and "id" in message:
-            try:
-                method = message["method"]
-                params = message.get("params", {})
-                params["server_id"] = server_id
-                req_id = message["id"]
+            method = message["method"]
+            params = message.get("params", {})
+            params["server_id"] = server_id
+            req_id = message["id"]
 
-                rpc_input = {
-                    "jsonrpc": "2.0",
-                    "method": method,
-                    "params": params,
-                    "id": req_id,
-                }
-                headers = {"Authorization": f"Bearer {user['token']}", "Content-Type": "application/json"}
-                rpc_url = base_url + "/rpc"
+            rpc_input = {
+                "jsonrpc": "2.0",
+                "method": method,
+                "params": params,
+                "id": req_id,
+            }
+            # Get the token from the current authentication context
+            # The user object doesn't contain the token directly, we need to reconstruct it
+            # Since we don't have access to the original headers here, we need a different approach
+            # We'll extract the token from the session or create a new admin token
+            token = None
+            try:
+                if hasattr(user, "get") and "auth_token" in user:
+                    token = user["auth_token"]
+                else:
+                    # Fallback: create an admin token for internal RPC calls
+                    now = datetime.now(timezone.utc)
+                    payload = {
+                        "sub": user.get("email", "system"),
+                        "iss": settings.jwt_issuer,
+                        "aud": settings.jwt_audience,
+                        "iat": int(now.timestamp()),
+                        "jti": str(uuid.uuid4()),
+                        "user": {
+                            "email": user.get("email", "system"),
+                            "full_name": user.get("full_name", "System"),
+                            "is_admin": True,  # Internal calls should have admin access
+                            "auth_provider": "internal",
+                        },
+                    }
+                    # Generate token using centralized token creation
+                    token = await create_jwt_token(payload)
+
+                headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+                # Extract root URL from base_url (remove /servers/{id} path)
+                parsed_url = urlparse(base_url)
+                # Preserve the path up to the root path (before /servers/{id})
+                path_parts = parsed_url.path.split("/")
+                if "/servers/" in parsed_url.path:
+                    # Find the index of 'servers' and take everything before it
+                    try:
+                        servers_index = path_parts.index("servers")
+                        root_path = "/" + "/".join(path_parts[1:servers_index]).strip("/")
+                        if root_path == "/":
+                            root_path = ""
+                    except ValueError:
+                        root_path = ""
+                else:
+                    root_path = parsed_url.path.rstrip("/")
+
+                root_url = f"{parsed_url.scheme}://{parsed_url.netloc}{root_path}"
+                rpc_url = root_url + "/rpc"
+
+                logger.info(f"SSE RPC: Making call to {rpc_url} with method={method}, params={params}")
+
                 async with ResilientHttpClient(client_args={"timeout": settings.federation_timeout, "verify": not settings.skip_ssl_verify}) as client:
+                    logger.info(f"SSE RPC: Sending request to {rpc_url}")
                     rpc_response = await client.post(
                         url=rpc_url,
                         json=rpc_input,
                         headers=headers,
                     )
+                    logger.info(f"SSE RPC: Got response status {rpc_response.status_code}")
                     result = rpc_response.json()
+                    logger.info(f"SSE RPC: Response content: {result}")
                     result = result.get("result", {})
 
                 response = {"jsonrpc": "2.0", "result": result, "id": req_id}
             except JSONRPCError as e:
+                logger.error(f"SSE RPC: JSON-RPC error: {e}")
                 result = e.to_dict()
                 response = {"jsonrpc": "2.0", "error": result["error"], "id": req_id}
             except Exception as e:
+                logger.error(f"SSE RPC: Exception during RPC call: {type(e).__name__}: {e}")
+                logger.error(f"SSE RPC: Traceback: {traceback.format_exc()}")
                 result = {"code": -32000, "message": "Internal error", "data": str(e)}
                 response = {"jsonrpc": "2.0", "error": result, "id": req_id}
 
