@@ -13,37 +13,72 @@ This gateway:
 
 ```mermaid
 graph TD
-    subgraph Clients
-        ui["Admin UI (Browser)"]
-        cli["CLI Tools"]
-        sdk["SDK / Scripts"]
+    subgraph "Client Tier"
+        direction LR
+        admin_ui["Admin UI (Browser)"]
+        cli["MCP CLI / SDK"]
+        agent["AI Agent / Tool User"]
     end
 
-    subgraph Gateway
-        app["FastAPI App"]
-        auth["Auth Middleware<br/>(JWT + Basic)"]
-        router["Transport Router<br/>(HTTP / WS / SSE / STDIO)"]
-        services["Service Layer<br/>(Tool / Resource / Prompt / Server)"]
-        db["Async DB<br/>(SQLAlchemy + Alembic)"]
-        cache["Cache Backend<br/>(memory / redis / db)"]
-        metrics["Metrics Exporter<br/>(/metrics Prometheus)"]
+    subgraph "Gateway Tier (FastAPI)"
+        direction TB
+        router["Transport Router<br>(HTTP, WS, SSE, Stdio)"]
+        auth["Auth Middleware<br>(JWT, Basic, OAuth)"]
+        plugin_manager["Plugin Manager"]
+
+        subgraph "Core Services"
+            direction TB
+            server_service["ServerService"]
+            tool_service["ToolService"]
+            gateway_service["GatewayService"]
+            resource_service["ResourceService"]
+            prompt_service["PromptService"]
+        end
+
+        db["Database<br>(SQLAlchemy)"]
+        cache["Cache<br>(Redis/Memory)"]
     end
 
-    subgraph Federation
-        discovery["Discovery Service<br/>(DNS-SD + Static Peers)"]
-        peers["Remote Gateways"]
+    subgraph "Backend Tier"
+        direction TB
+        rest_api["External REST API"]
+        mcp_server["Peer MCP Server"]
+        a2a_agent["A2A Agent"]
     end
 
-    ui --> app
-    cli --> router
-    sdk --> router
-    app --> auth --> router
-    router --> services
-    services --> db
-    services --> cache
-    services --> metrics
-    services --> discovery
-    discovery --> peers
+    %% Client to Gateway
+    admin_ui --> auth
+    cli --> auth
+    agent --> auth
+    auth --> router
+
+    %% Gateway Internals
+    router --> plugin_manager
+    plugin_manager --> server_service
+    plugin_manager --> tool_service
+    plugin_manager --> resource_service
+    plugin_manager --> prompt_service
+
+    server_service --> db
+    tool_service --> db
+    gateway_service --> db
+    resource_service --> db
+    prompt_service --> db
+
+    server_service --> cache
+    tool_service --> cache
+    resource_service --> cache
+
+    %% Service Interactions
+    server_service -- manages associations --> tool_service
+    server_service -- manages associations --> resource_service
+    server_service -- manages associations --> prompt_service
+    server_service -- manages associations --> gateway_service
+
+    %% Gateway to Backend
+    tool_service -- invokes --> rest_api
+    tool_service -- invokes --> a2a_agent
+    gateway_service -- federates with --> mcp_server
 
 ```
 

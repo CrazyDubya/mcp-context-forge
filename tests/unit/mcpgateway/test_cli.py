@@ -5,13 +5,6 @@ SPDX-License-Identifier: Apache-2.0
 Authors: Mihai Criveti
 
 Tests for the mcpgateway CLI module (cli.py).
-This module contains tests for the tiny "Uvicorn wrapper" found in
-mcpgateway.cli.  It exercises **every** decision point:
-
-* `_needs_app`  - missing vs. present app path
-* `_insert_defaults` - all permutations of host/port injection
-* `main()` - early-return on --version / -V **and** the happy path that
-  actually calls Uvicorn with a patched ``sys.argv``.
 """
 
 # Future
@@ -20,133 +13,54 @@ from __future__ import annotations
 # Standard
 import sys
 from typing import Any, Dict, List
+from unittest.mock import patch, AsyncMock
 
 # Third-Party
 import pytest
+from typer.testing import CliRunner
 
 # First-Party
 import mcpgateway.cli as cli
+from mcpgateway import __version__
 
-# ---------------------------------------------------------------------------
-# helpers / fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _restore_sys_argv() -> None:
-    """Keep the global *sys.argv* pristine between tests."""
-    original = sys.argv.copy()
-    yield
-    sys.argv[:] = original
+runner = CliRunner()
 
 
-def _capture_uvicorn_main(monkeypatch) -> Dict[str, Any]:
-    """Monkey-patch *uvicorn.main* and record the argv it sees."""
-    captured: Dict[str, Any] = {}
-
-    def _fake_main() -> None:
-        # Copy because tests mutate sys.argv afterwards.
-        captured["argv"] = sys.argv.copy()
-
-    monkeypatch.setattr(cli.uvicorn, "main", _fake_main)
-    return captured
+def test_version():
+    """Test the --version flag."""
+    result = runner.invoke(cli.app, ["--version"])
+    assert result.exit_code == 0
+    assert f"mcpgateway {__version__}" in result.stdout
 
 
-# ---------------------------------------------------------------------------
-#  _needs_app
-# ---------------------------------------------------------------------------
+def test_run_command(monkeypatch):
+    """Test the run command."""
+    mock_uvicorn_run = lambda *args, **kwargs: None
+    monkeypatch.setattr(cli.uvicorn, "run", mock_uvicorn_run)
+    result = runner.invoke(cli.app, ["run"])
+    assert result.exit_code == 0
 
 
-@pytest.mark.parametrize(
-    ("argv", "missing"),
-    [
-        ([], True),  # no positional args at all
-        (["--reload"], True),  # first token is an option
-        (["somepkg.app:app"], False),  # explicit app path present
-    ],
-)
-def test_needs_app_detection(argv: List[str], missing: bool) -> None:
-    assert cli._needs_app(argv) is missing
+def test_export_command(monkeypatch):
+    """Test the export command."""
+    with patch("mcpgateway.services.cli_service.export_configuration", new_callable=AsyncMock) as mock_export:
+        result = runner.invoke(cli.app, ["export"])
+        assert result.exit_code == 0
+        mock_export.assert_called_once()
 
 
-# ---------------------------------------------------------------------------
-#  _insert_defaults
-# ---------------------------------------------------------------------------
+def test_import_command(monkeypatch):
+    """Test the import command."""
+    with patch("mcpgateway.services.cli_service.import_configuration", new_callable=AsyncMock) as mock_import:
+        result = runner.invoke(cli.app, ["import", "dummy_file.json"])
+        assert result.exit_code == 0
+        mock_import.assert_called_once()
 
 
-def test_insert_defaults_injects_everything() -> None:
-    """No app/host/port supplied ⇒ inject all three."""
-    raw = ["--reload"]
-    out = cli._insert_defaults(raw)
-
-    # original list must remain untouched (function copies)
-    assert raw == ["--reload"]
-
-    assert out[0] == cli.DEFAULT_APP
-    assert "--host" in out and cli.DEFAULT_HOST in out
-    assert "--port" in out and str(cli.DEFAULT_PORT) in out
-
-
-def test_insert_defaults_respects_explicit_host(monkeypatch) -> None:
-    """Host given, port missing ⇒ only port default injected."""
-    raw = ["myapp:app", "--host", "0.0.0.0"]
-    out = cli._insert_defaults(raw)
-
-    # our app path must stay first
-    assert out[0] == "myapp:app"
-    # host left untouched, port injected
-    assert out.count("--host") == 1
-    assert "--port" in out and str(cli.DEFAULT_PORT) in out
-
-
-def test_insert_defaults_skips_for_uds() -> None:
-    """When --uds is present no host/port defaults are added."""
-    raw = ["--uds", "/tmp/app.sock"]
-    out = cli._insert_defaults(raw)
-
-    assert "--host" not in out
-    assert "--port" not in out
-
-
-# ---------------------------------------------------------------------------
-#  main() - early *--version* short-circuit
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("flag", ["--version", "-V"])
-def test_main_prints_version_and_exits(flag: str, capsys, monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["mcpgateway", flag])
-    # If Uvicorn accidentally ran we'd hang the tests - make sure it can't.
-    monkeypatch.setattr(cli.uvicorn, "main", lambda: (_ for _ in ()).throw(RuntimeError("should not be called")))
-    cli.main()
-
-    out, err = capsys.readouterr()
-    assert out.strip() == f"mcpgateway {cli.__version__}"
-    assert err == ""
-
-
-# ---------------------------------------------------------------------------
-#  main() - normal execution path (calls Uvicorn)
-# ---------------------------------------------------------------------------
-
-
-def test_main_invokes_uvicorn_with_patched_argv(monkeypatch) -> None:
-    """Ensure *main()* rewrites argv then delegates to Uvicorn."""
-    captured = _capture_uvicorn_main(monkeypatch)
-    monkeypatch.setattr(sys, "argv", ["mcpgateway", "--reload"])
-
-    cli.main()
-
-    # The fake Uvicorn ran exactly once
-    assert "argv" in captured
-    patched = captured["argv"]
-
-    # Position 0 must be the console-script name
-    assert patched[0] == "mcpgateway"
-    # The injected app path must follow
-    assert patched[1] == cli.DEFAULT_APP
-    # Original flag preserved
-    assert "--reload" in patched
-    # Defaults present
-    assert "--host" in patched and cli.DEFAULT_HOST in patched
-    assert "--port" in patched and str(cli.DEFAULT_PORT) in patched
+def test_plugin_create_command(monkeypatch):
+    """Test the plugin create command."""
+    mock_cookiecutter = lambda *args, **kwargs: None
+    monkeypatch.setattr(cli, "cookiecutter", mock_cookiecutter)
+    result = runner.invoke(cli.app, ["plugin", "create", "My Test Plugin"])
+    assert result.exit_code == 0
+    assert "Plugin 'My Test Plugin' created successfully" in result.stdout

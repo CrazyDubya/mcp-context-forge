@@ -139,8 +139,7 @@ except RuntimeError:
 else:
     loop.create_task(bootstrap_db())
 
-# Initialize plugin manager as a singleton.
-plugin_manager: PluginManager | None = PluginManager(settings.plugin_config_file) if settings.plugins_enabled else None
+from mcpgateway.plugins.framework.instance import plugin_manager
 
 # Initialize services
 tool_service = ToolService()
@@ -210,6 +209,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         if plugin_manager:
             await plugin_manager.initialize()
             logger.info(f"Plugin manager initialized with {plugin_manager.plugin_count} plugins")
+            plugin_manager.start_watcher()
 
         if settings.enable_header_passthrough:
             db_gen = get_db()
@@ -247,6 +247,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # Shutdown plugin manager
         if plugin_manager:
             try:
+                plugin_manager.stop_watcher()
                 await plugin_manager.shutdown()
                 logger.info("Plugin manager shutdown complete")
             except Exception as e:

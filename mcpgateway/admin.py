@@ -115,6 +115,39 @@ if logging_service is None:
     logging_service = LoggingService()
     LOGGER = logging_service.get_logger("mcpgateway.admin")
 
+# First-Party
+from mcpgateway.config import settings
+from mcpgateway.db import get_db, GlobalConfig
+from mcpgateway.db import Tool as DbTool
+from mcpgateway.models import LogLevel
+from mcpgateway.plugins.framework.instance import plugin_manager
+from mcpgateway.schemas import (
+    A2AAgentCreate,
+    GatewayCreate,
+    GatewayRead,
+    GatewayTestRequest,
+    GatewayTestResponse,
+    GatewayUpdate,
+    GlobalConfigRead,
+    GlobalConfigUpdate,
+    PromptCreate,
+    PromptMetrics,
+    PromptRead,
+    PromptUpdate,
+    ResourceCreate,
+    ResourceMetrics,
+    ResourceRead,
+    ResourceUpdate,
+    ServerCreate,
+    ServerMetrics,
+    ServerRead,
+    ServerUpdate,
+    ToolCreate,
+    ToolMetrics,
+    ToolRead,
+    ToolUpdate,
+)
+
 # Initialize services
 server_service: ServerService = ServerService()
 tool_service: ToolService = ToolService()
@@ -4193,6 +4226,24 @@ MetricsDict = Dict[str, Union[ToolMetrics, ResourceMetrics, ServerMetrics, Promp
 #         "servers": server_metrics,
 #         "prompts": prompt_metrics,
 #     }
+
+
+@admin_router.post("/plugins/reload", response_model=Dict[str, Any])
+async def admin_reload_plugins(user: str = Depends(require_auth)) -> Dict[str, Any]:
+    """
+    Reload all plugins from the configuration file.
+
+    Args:
+        user: Authenticated user.
+
+    Returns:
+        A dictionary with a success message.
+    """
+    LOGGER.info(f"User {user} requested to reload plugins.")
+    if plugin_manager:
+        await plugin_manager.reload()
+        return {"status": "success", "message": "Plugins reloaded successfully."}
+    return {"status": "error", "message": "Plugin manager not enabled."}
 
 
 @admin_router.get("/metrics")

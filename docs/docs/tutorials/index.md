@@ -4,6 +4,19 @@
 
 ---
 
+## 🚀 End-to-End Example: From REST API to Virtual Server
+
+This tutorial walks you through a complete, end-to-end example of how to use the MCP Gateway to wrap an existing REST API, create a virtual server, and expose it to your clients. You'll learn how to:
+
+- Register a public REST API as a tool in the gateway.
+- Create a virtual server to house your new tool.
+- Associate the tool with the virtual server.
+- Invoke the tool through the virtual server's endpoint using `curl`.
+
+👉 [Read the full guide](end-to-end-example.md)
+
+---
+
 ## 🚀 Cloud Deployment with Argo CD and IBM Cloud Kubernetes Service
 
 This guide walks you through deploying the **MCP Gateway Stack** on **IBM Cloud Kubernetes Service (IKS)** using **Helm** and **Argo CD** for GitOps-based lifecycle management. You'll learn how to:

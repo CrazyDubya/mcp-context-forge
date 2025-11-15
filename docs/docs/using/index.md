@@ -21,6 +21,7 @@ This section focuses on how to use MCP Gateway effectively as a developer, integ
 | [mcpgateway-wrapper](mcpgateway-wrapper.md) | Wrap CLI tools or subprocesses to expose them via SSE/stdio |
 | [Clients](clients/index.md) | Compatible UIs and developer tools |
 | [Agents](agents/index.md) | LangChain, LangGraph, CrewAI, and other frameworks |
+| [Plugin Registry](plugin-registry.md) | Discover available plugins to extend the gateway. |
 
 ---
 

@@ -32,6 +32,10 @@ import logging
 import time
 from typing import Any, Callable, Coroutine, Dict, Generic, Optional, Tuple, TypeVar
 
+# Third-Party
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
 # First-Party
 from mcpgateway.plugins.framework.base import Plugin, PluginRef
 from mcpgateway.plugins.framework.loader.config import ConfigLoader
@@ -421,6 +425,16 @@ async def post_resource_fetch(plugin: PluginRef, payload: ResourcePostFetchPaylo
     return await plugin.plugin.resource_post_fetch(payload, context)
 
 
+class PluginConfigChangeHandler(FileSystemEventHandler):
+    def __init__(self, manager):
+        self.manager = manager
+
+    def on_modified(self, event):
+        if not event.is_directory and event.src_path.endswith("plugins/config.yaml"):
+            logger.info("Plugin config file changed. Reloading plugins.")
+            asyncio.run(self.manager.reload())
+
+
 class PluginManager:
     """Plugin manager for managing the plugin lifecycle.
 
@@ -469,6 +483,7 @@ class PluginManager:
     # Context cleanup tracking
     _context_store: Dict[str, Tuple[PluginContextTable, float]] = {}
     _last_cleanup: float = 0
+    _observer: Optional[Observer] = None
 
     def __init__(self, config: str = "", timeout: int = DEFAULT_PLUGIN_TIMEOUT):
         """Initialize plugin manager.
@@ -500,6 +515,29 @@ class PluginManager:
         if not hasattr(self, "_context_store"):
             self._context_store = {}
             self._last_cleanup = time.time()
+
+    async def reload(self) -> None:
+        """Reload all plugins from the configuration file."""
+        logger.info("Reloading plugins...")
+        await self.shutdown()
+        await self.initialize()
+        logger.info("Plugins reloaded.")
+
+    def start_watcher(self) -> None:
+        """Start watching the plugin configuration file for changes."""
+        if self._config and self._config.plugin_settings.hot_reload:
+            event_handler = PluginConfigChangeHandler(self)
+            self._observer = Observer()
+            self._observer.schedule(event_handler, "plugins", recursive=False)
+            self._observer.start()
+            logger.info("Plugin config watcher started.")
+
+    def stop_watcher(self) -> None:
+        """Stop watching the plugin configuration file."""
+        if self._observer:
+            self._observer.stop()
+            self._observer.join()
+            logger.info("Plugin config watcher stopped.")
 
     @property
     def config(self) -> Config | None:
